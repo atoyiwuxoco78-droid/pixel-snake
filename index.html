@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>像素贪吃蛇 · Pixel Snake</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="scanlines" aria-hidden="true"></div>
+  <div class="app">
+    <header class="header">
+      <h1 class="title">
+        <span class="neon-cyan">像素</span><span class="neon-magenta">贪吃蛇</span>
+      </h1>
+      <p class="subtitle">PIXEL SNAKE · RETRO</p>
+    </header>
+
+    <main class="main">
+      <aside class="panel panel-left">
+        <div class="stat-box">
+          <div class="stat-label">得分</div>
+          <div class="stat-value neon-cyan" id="score">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">最高分</div>
+          <div class="stat-value neon-magenta" id="highScore">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">长度</div>
+          <div class="stat-value" id="length">3</div>
+        </div>
+        <div class="controls-hint">
+          <p>方向键 / WASD</p>
+          <p>空格 · 暂停</p>
+        </div>
+        <div class="btn-stack">
+          <button type="button" class="btn btn-primary" id="btnStart">开始游戏</button>
+          <button type="button" class="btn btn-secondary" id="btnPause" disabled>暂停</button>
+          <button type="button" class="btn btn-secondary" id="btnRestart">重新开始</button>
+        </div>
+      </aside>
+
+      <section class="game-area">
+        <div class="canvas-wrap">
+          <canvas id="game" width="560" height="560" aria-label="贪吃蛇游戏画布"></canvas>
+          <div class="overlay" id="overlay">
+            <div class="overlay-content" id="overlayContent">
+              <p class="overlay-title" id="overlayTitle">准备好了吗？</p>
+              <p class="overlay-msg" id="overlayMsg">按「开始游戏」或空格键</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="dpad" id="dpad" aria-label="虚拟方向键">
+          <button type="button" class="dpad-btn dpad-up" data-dir="up" aria-label="上">▲</button>
+          <button type="button" class="dpad-btn dpad-left" data-dir="left" aria-label="左">◀</button>
+          <button type="button" class="dpad-btn dpad-center" disabled aria-hidden="true">●</button>
+          <button type="button" class="dpad-btn dpad-right" data-dir="right" aria-label="右">▶</button>
+          <button type="button" class="dpad-btn dpad-down" data-dir="down" aria-label="下">▼</button>
+        </div>
+      </section>
+
+      <aside class="panel panel-right">
+        <div class="board-header">
+          <h2 class="board-title neon-cyan">排行榜</h2>
+          <span class="board-sub">TOP 10</span>
+        </div>
+        <ol class="leaderboard" id="leaderboard">
+          <!-- filled by JS -->
+        </ol>
+        <button type="button" class="btn btn-danger btn-sm" id="btnClearScores">清空成绩</button>
+      </aside>
+    </main>
+
+    <footer class="footer">
+      <span>本地存储 · 仅本机可见</span>
+    </footer>
+  </div>
+
+  <!-- Nickname modal -->
+  <div class="modal hidden" id="scoreModal" role="dialog" aria-labelledby="modalTitle">
+    <div class="modal-box">
+      <h3 class="modal-title neon-magenta" id="modalTitle">游戏结束</h3>
+      <p class="modal-score">本局得分：<strong id="finalScore">0</strong></p>
+      <label class="modal-label" for="nickname">输入昵称</label>
+      <input type="text" id="nickname" class="modal-input" maxlength="12" placeholder="游客" value="游客" autocomplete="off" />
+      <div class="modal-actions">
+        <button type="button" class="btn btn-primary" id="btnSubmitScore">提交成绩</button>
+        <button type="button" class="btn btn-secondary" id="btnSkipScore">跳过</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
