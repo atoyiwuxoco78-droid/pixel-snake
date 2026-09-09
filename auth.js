@@ -19,6 +19,7 @@ import {
   setDoc,
   collection,
   query,
+  where,
   orderBy,
   limit,
   getDocs,
@@ -40,6 +41,24 @@ const db = getFirestore(app);
 const googleProvider = new GoogleAuthProvider();
 
 let currentUser = null;
+const VALID_DIFFS = ["easy", "normal", "hell"];
+const DIFF_LABELS = { easy: "简单", normal: "普通", hell: "地狱" };
+
+function resolveDifficulty(explicit) {
+  if (VALID_DIFFS.indexOf(explicit) >= 0) return explicit;
+  try {
+    const g = window.PixelSnakeGame;
+    if (g && typeof g.getBoardDifficulty === "function") {
+      const b = g.getBoardDifficulty();
+      if (VALID_DIFFS.indexOf(b) >= 0) return b;
+    }
+    if (g && typeof g.getDifficulty === "function") {
+      const d = g.getDifficulty();
+      if (VALID_DIFFS.indexOf(d) >= 0) return d;
+    }
+  } catch (_) {}
+  return "normal";
+}
 
 function $(id) {
   return document.getElementById(id);
@@ -192,24 +211,50 @@ function errorReason(err) {
   return err.message || "未知错误";
 }
 
-async function saveBestScore(pts) {
+async function saveBestScore(pts, difficultyId) {
   const user = auth.currentUser;
   if (!user || typeof pts !== "number" || pts < 0 || !Number.isFinite(pts)) {
     return { saved: false, reason: "not-logged-in" };
   }
+  const difficulty = resolveDifficulty(difficultyId);
   // JS SDK stores numbers as doubles — rules accept whole numbers; floor for safety
   const score = Math.floor(pts);
   const name = displayNameFor(user);
-  const ref = doc(db, "scores", user.uid);
+  const docId = user.uid + "_" + difficulty;
+  const ref = doc(db, "scores", docId);
   try {
     // Ensure Auth token is attached to Firestore requests
     await user.getIdToken(true);
     const snap = await getDoc(ref);
+    let previous = null;
     if (snap.exists()) {
-      const prev = snap.data().score;
-      if (typeof prev === "number" && score < prev) {
-        return { saved: false, reason: "lower", previous: prev };
+      previous = snap.data().score;
+      if (typeof previous === "number" && score < previous) {
+        return { saved: false, reason: "lower", previous: previous, difficulty: difficulty };
       }
+    } else if (difficulty === "normal") {
+      // One-time: seed from legacy scores/{uid} into normal board if higher
+      try {
+        const legacy = await getDoc(doc(db, "scores", user.uid));
+        if (legacy.exists()) {
+          const legScore = legacy.data().score;
+          if (typeof legScore === "number" && score < legScore) {
+            await setDoc(
+              ref,
+              {
+                score: Math.floor(legScore),
+                displayName: name,
+                updatedAt: Date.now(),
+                uid: user.uid,
+                difficulty: "normal",
+              },
+              { merge: true }
+            );
+            await loadCloudLeaderboard(difficulty);
+            return { saved: false, reason: "lower", previous: legScore, difficulty: difficulty };
+          }
+        }
+      } catch (_) {}
     }
     await setDoc(
       ref,
@@ -218,11 +263,12 @@ async function saveBestScore(pts) {
         displayName: name,
         updatedAt: Date.now(),
         uid: user.uid,
+        difficulty: difficulty,
       },
       { merge: true }
     );
-    await loadCloudLeaderboard();
-    return { saved: true, score: score };
+    await loadCloudLeaderboard(difficulty);
+    return { saved: true, score: score, difficulty: difficulty };
   } catch (err) {
     const code = err && err.code;
     console.warn("[pixel-snake] cloud score save failed", code, err);
@@ -248,19 +294,32 @@ function formatUpdatedAt(ts) {
   }
 }
 
-async function loadCloudLeaderboard() {
+function syncCloudBoardTitle(difficulty) {
+  const label = DIFF_LABELS[difficulty] || "普通";
+  const title = $("cloudBoardTitle");
+  const sub = $("cloudBoardSub");
+  if (title) title.textContent = "云端 · " + label;
+  if (sub) sub.textContent = "TOP 10 · Firestore · " + label;
+}
+
+async function loadCloudLeaderboard(difficultyId) {
   const el = $("cloudLeaderboard");
   if (!el) return;
+  const difficulty = resolveDifficulty(difficultyId);
+  syncCloudBoardTitle(difficulty);
   el.innerHTML = '<li class="empty">加载中…</li>';
   try {
     const q = query(
       collection(db, "scores"),
+      where("difficulty", "==", difficulty),
       orderBy("score", "desc"),
       limit(10)
     );
     const snap = await getDocs(q);
+    const label = DIFF_LABELS[difficulty] || "普通";
     if (snap.empty) {
-      el.innerHTML = '<li class="empty">暂无云端成绩<br/>登录后上传吧！</li>';
+      el.innerHTML =
+        '<li class="empty">暂无「' + label + '」云端成绩<br/>登录后上传吧！</li>';
       return;
     }
     const rows = [];
@@ -415,7 +474,11 @@ function wireUI() {
   if (btnLogout) btnLogout.addEventListener("click", handleLogout);
   if (btnSubmit) btnSubmit.addEventListener("click", handleEmailAuth);
   if (btnCancel) btnCancel.addEventListener("click", closeAuthModal);
-  if (btnRefresh) btnRefresh.addEventListener("click", loadCloudLeaderboard);
+  if (btnRefresh) {
+    btnRefresh.addEventListener("click", function () {
+      loadCloudLeaderboard(resolveDifficulty());
+    });
+  }
 
   if (modal) {
     modal.addEventListener("click", function (e) {
@@ -460,5 +523,5 @@ window.PixelSnakeFirebase = {
 wireUI();
 onAuthStateChanged(auth, function (user) {
   updateAccountUI(user);
-  loadCloudLeaderboard();
+  loadCloudLeaderboard(resolveDifficulty());
 });

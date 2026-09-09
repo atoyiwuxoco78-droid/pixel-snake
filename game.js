@@ -12,9 +12,12 @@
   const SCORE_PER_LEVEL = 50;
   const POWERUP_CHANCE = 0.32; // after eating food
   const POWERUP_DURATION_MS = 5500;
-  const STORAGE_KEY = "pixel-snake-leaderboard-v1";
+  const STORAGE_KEY_V1 = "pixel-snake-leaderboard-v1";
+  const STORAGE_KEY = "pixel-snake-scores-v2";
   const DIFFICULTY_KEY = "pixel-snake-difficulty-v1";
   const MAX_SCORES = 10;
+  const DIFF_ORDER = ["easy", "normal", "hell"];
+  const DIFF_LABELS = { easy: "简单", normal: "普通", hell: "地狱" };
   const MIN_SNAKE_LEN = 3;
   const DIRS = {
     up: { x: 0, y: -1 },
@@ -136,6 +139,7 @@
 
   // ----- State -----
   let difficultyId = "normal";
+  let boardDiffId = "normal"; // leaderboard board selector (local + cloud sync)
   let diff = DIFFICULTY.normal;
   let snake = [];
   let dir = "right";
@@ -194,43 +198,96 @@
       localStorage.setItem(DIFFICULTY_KEY, next);
     } catch (_) {}
     syncDifficultyTabs();
+    // Keep leaderboard board tabs in sync with single-player difficulty
+    if (!opts || opts.syncBoard !== false) {
+      setBoardDifficulty(next, { fromGame: true });
+    }
     // Mid-run: retune timer; obstacles rebuild on next level sync / restart
     if (opts && opts.restartTimer) restartTimer();
   }
 
-  // ----- Leaderboard -----
-  function loadScores() {
+  // ----- Leaderboard (per-difficulty) -----
+  function emptyBoards() {
+    return { easy: [], normal: [], hell: [] };
+  }
+
+  function normalizeBoards(data) {
+    const out = emptyBoards();
+    if (!data || typeof data !== "object") return out;
+    DIFF_ORDER.forEach(function (k) {
+      out[k] = Array.isArray(data[k]) ? data[k] : [];
+    });
+    return out;
+  }
+
+  function migrateV1Once() {
+    try {
+      if (localStorage.getItem(STORAGE_KEY)) return; // already on v2
+      const raw = localStorage.getItem(STORAGE_KEY_V1);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (!Array.isArray(data) || !data.length) {
+        localStorage.removeItem(STORAGE_KEY_V1);
+        return;
+      }
+      const boards = emptyBoards();
+      boards.normal = data.slice(0, MAX_SCORES);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(boards));
+      localStorage.removeItem(STORAGE_KEY_V1);
+    } catch (_) {}
+  }
+
+  function loadAllScores() {
+    migrateV1Once();
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return [];
-      const data = JSON.parse(raw);
-      return Array.isArray(data) ? data : [];
+      if (!raw) return emptyBoards();
+      return normalizeBoards(JSON.parse(raw));
     } catch {
-      return [];
+      return emptyBoards();
     }
   }
 
-  function saveScores(list) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list.slice(0, MAX_SCORES)));
+  function saveAllScores(boards) {
+    const normalized = normalizeBoards(boards);
+    DIFF_ORDER.forEach(function (k) {
+      normalized[k] = (normalized[k] || []).slice(0, MAX_SCORES);
+    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
   }
 
-  function addScore(nickname, pts) {
+  function loadScores(diffId) {
+    const id = DIFFICULTY[diffId] ? diffId : boardDiffId;
+    return loadAllScores()[id] || [];
+  }
+
+  function saveScoresFor(diffId, list) {
+    const boards = loadAllScores();
+    const id = DIFFICULTY[diffId] ? diffId : "normal";
+    boards[id] = (list || []).slice(0, MAX_SCORES);
+    saveAllScores(boards);
+  }
+
+  function addScore(nickname, pts, forDiff) {
     const name = (nickname || "游客").trim().slice(0, 12) || "游客";
-    const list = loadScores();
+    const id = DIFFICULTY[forDiff] ? forDiff : difficultyId;
+    const list = loadScores(id).slice();
     list.push({
       nickname: name,
       score: pts,
       date: new Date().toISOString(),
+      difficulty: id,
     });
     list.sort((a, b) => b.score - a.score || a.date.localeCompare(b.date));
-    saveScores(list);
-    renderLeaderboard();
+    saveScoresFor(id, list);
+    if (id === boardDiffId) renderLeaderboard();
     updateHighScoreDisplay();
   }
 
   function clearScores() {
-    if (!confirm("确定清空本地排行榜？此操作不可撤销。")) return;
-    localStorage.removeItem(STORAGE_KEY);
+    const label = DIFF_LABELS[boardDiffId] || boardDiffId;
+    if (!confirm("确定清空「本地 · " + label + "」排行榜？此操作不可撤销。")) return;
+    saveScoresFor(boardDiffId, []);
     renderLeaderboard();
     updateHighScoreDisplay();
   }
@@ -247,11 +304,54 @@
     }
   }
 
+  function syncBoardTitles() {
+    const label = DIFF_LABELS[boardDiffId] || "普通";
+    const localTitle = document.getElementById("localBoardTitle");
+    const localSub = document.getElementById("localBoardSub");
+    const cloudTitle = document.getElementById("cloudBoardTitle");
+    const cloudSub = document.getElementById("cloudBoardSub");
+    if (localTitle) localTitle.textContent = "本地 · " + label;
+    if (localSub) localSub.textContent = "TOP 10 · 本机 · " + label;
+    if (cloudTitle) cloudTitle.textContent = "云端 · " + label;
+    if (cloudSub) cloudSub.textContent = "TOP 10 · Firestore · " + label;
+  }
+
+  function syncLbDiffTabs() {
+    const tabs = document.getElementById("lbDiffTabs");
+    if (!tabs) return;
+    tabs.querySelectorAll(".lb-diff-tab[data-lb-diff]").forEach(function (btn) {
+      const on = btn.getAttribute("data-lb-diff") === boardDiffId;
+      btn.classList.toggle("active", on);
+      btn.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    syncBoardTitles();
+  }
+
+  function setBoardDifficulty(id, opts) {
+    const next = DIFFICULTY[id] ? id : "normal";
+    if (next === boardDiffId && !(opts && opts.force)) {
+      syncLbDiffTabs();
+      return;
+    }
+    boardDiffId = next;
+    syncLbDiffTabs();
+    renderLeaderboard();
+    // Refresh cloud board for this difficulty
+    const api = window.PixelSnakeFirebase;
+    if (api && typeof api.refreshCloudLeaderboard === "function") {
+      try {
+        api.refreshCloudLeaderboard(next);
+      } catch (_) {}
+    }
+  }
+
   function renderLeaderboard() {
-    const list = loadScores();
+    const list = loadScores(boardDiffId);
+    const label = DIFF_LABELS[boardDiffId] || "普通";
+    syncBoardTitles();
     if (!list.length) {
       leaderboardEl.innerHTML =
-        '<li class="empty">暂无成绩<br/>来一局吧！</li>';
+        '<li class="empty">暂无「' + label + '」成绩<br/>来一局吧！</li>';
       return;
     }
     leaderboardEl.innerHTML = list
@@ -285,7 +385,8 @@
   }
 
   function updateHighScoreDisplay() {
-    const list = loadScores();
+    // High score HUD reflects the current single-player difficulty board
+    const list = loadScores(difficultyId);
     highScore = list.length ? list[0].score : 0;
     if (score > highScore) highScore = score;
     highScoreEl.textContent = String(Math.max(highScore, score));
@@ -769,7 +870,7 @@
     if (!api || !api.isLoggedIn || !api.isLoggedIn() || !api.saveBestScore) {
       return Promise.resolve({ saved: false, reason: "not-logged-in" });
     }
-    return Promise.resolve(api.saveBestScore(pts)).catch(function (err) {
+    return Promise.resolve(api.saveBestScore(pts, difficultyId)).catch(function (err) {
       return {
         saved: false,
         reason: "error",
@@ -1316,6 +1417,17 @@
       }
     });
   }
+  const lbDiffTabs = document.getElementById("lbDiffTabs");
+  if (lbDiffTabs) {
+    lbDiffTabs.addEventListener("click", function (e) {
+      const btn = e.target.closest(".lb-diff-tab[data-lb-diff]");
+      if (!btn || !lbDiffTabs.contains(btn)) return;
+      const next = btn.getAttribute("data-lb-diff");
+      if (!DIFFICULTY[next]) return;
+      setBoardDifficulty(next);
+    });
+  }
+  setBoardDifficulty(difficultyId, { force: true });
   renderLeaderboard();
   updateHighScoreDisplay();
   resetGame();
@@ -1361,6 +1473,10 @@
     getDifficulty: function () {
       return difficultyId;
     },
+    getBoardDifficulty: function () {
+      return boardDiffId;
+    },
+    setBoardDifficulty: setBoardDifficulty,
   };
 
 })();
