@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#0a0e17" />
+  <meta name="theme-color" content="#060912" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -24,7 +24,7 @@
       <h1 class="title">
         <span class="neon-cyan">像素</span><span class="neon-magenta">贪吃蛇</span>
       </h1>
-      <p class="subtitle">PIXEL SNAKE · RETRO</p>
+      <p class="subtitle">Arcade Edition</p>
       <div class="account-bar" id="accountBar">
         <div class="account-chip" id="accountChip">
           <span class="account-label">账号</span>
@@ -89,9 +89,11 @@
           <div class="mp-lobby" id="mpLobby">
             <p class="mp-hint">需登录 · 同房间实时对战</p>
             <button type="button" class="btn btn-primary btn-cta" id="btnMpCreate">创建房间</button>
-            <label class="mp-label" for="mpJoinCode">房间号</label>
-            <input type="text" id="mpJoinCode" class="mp-input" maxlength="6" placeholder="6 位房间号" autocomplete="off" spellcheck="false" />
-            <button type="button" class="btn btn-secondary" id="btnMpJoin">加入房间</button>
+            <div class="mp-join-form">
+              <label class="mp-label" for="mpJoinCode">加入房间</label>
+              <input type="text" id="mpJoinCode" class="mp-input" maxlength="6" placeholder="6 位房间号" autocomplete="off" spellcheck="false" />
+              <button type="button" class="btn btn-secondary" id="btnMpJoin">加入房间</button>
+            </div>
             <p class="mp-ttl">房间约 30 分钟后过期</p>
           </div>
           <div class="mp-inroom hidden" id="mpInRoom" hidden>
@@ -120,12 +122,14 @@
 
       <section class="game-area">
         <div class="canvas-wrap">
-          <canvas id="game" width="560" height="560" aria-label="贪吃蛇游戏画布"></canvas>
-          <div class="toast hidden" id="toast" aria-live="polite"></div>
-          <div class="overlay" id="overlay">
-            <div class="overlay-content" id="overlayContent">
-              <p class="overlay-title" id="overlayTitle">准备好了吗？</p>
-              <p class="overlay-msg" id="overlayMsg">按「开始游戏」或空格键</p>
+          <div class="canvas-inner">
+            <canvas id="game" width="560" height="560" aria-label="贪吃蛇游戏画布"></canvas>
+            <div class="toast hidden" id="toast" aria-live="polite"></div>
+            <div class="overlay" id="overlay">
+              <div class="overlay-content" id="overlayContent">
+                <p class="overlay-title" id="overlayTitle">准备好了吗？</p>
+                <p class="overlay-msg" id="overlayMsg">按「开始游戏」或空格键</p>
+              </div>
             </div>
           </div>
         </div>
