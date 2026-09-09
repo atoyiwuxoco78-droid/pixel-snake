@@ -87,6 +87,8 @@
   let activePower = null; // { type, endsAt }
   let toastTimer = null;
   let powerHudTimer = null;
+  let mpMode = false; // when true, single-player yields canvas/input to multiplayer
+
 
   // ----- Leaderboard -----
   function loadScores() {
@@ -393,6 +395,7 @@
   }
 
   function startGame() {
+    if (mpMode) return;
     if (running && !paused && !dead) return;
     if (dead || !snake.length) resetGame();
     running = true;
@@ -406,6 +409,7 @@
   }
 
   function pauseGame() {
+    if (mpMode) return;
     if (!running || dead) return;
     paused = !paused;
     if (paused) {
@@ -421,6 +425,7 @@
   }
 
   function restartGame() {
+    if (mpMode) return;
     clearInterval(timer);
     timer = null;
     running = false;
@@ -620,6 +625,7 @@
   }
 
   function setDirection(newDir) {
+    if (mpMode) return;
     if (!DIRS[newDir]) return;
     if (OPPOSITE[newDir] === dir && snake.length > 1) return;
     nextDir = newDir;
@@ -797,6 +803,7 @@
 
   // Soft repaint for power-up pulse while running
   setInterval(function () {
+    if (mpMode) return;
     if (running && !paused && !dead && powerUp) draw();
   }, 120);
 
@@ -817,6 +824,7 @@
   };
 
   document.addEventListener("keydown", function (e) {
+    if (mpMode) return;
     var authModal = document.getElementById("authModal");
     var authOpen = authModal && !authModal.classList.contains("hidden");
     var ae = document.activeElement;
@@ -853,6 +861,7 @@
     if (!dirAttr) return;
 
     function fire(ev) {
+      if (mpMode) return;
       ev.preventDefault();
       el.classList.add("active");
       setDirection(dirAttr);
@@ -870,6 +879,7 @@
   dpad.querySelectorAll(".dpad-btn[data-dir]").forEach(bindDpad);
 
   btnStart.addEventListener("click", function () {
+    if (mpMode) return;
     if (!scoreModal.classList.contains("hidden")) return;
     startGame();
   });
@@ -908,4 +918,44 @@
   updateHighScoreDisplay();
   resetGame();
   showOverlay("准备好了吗？", "按「开始游戏」或空格键");
+
+  function enterMultiplayer() {
+    mpMode = true;
+    clearInterval(timer);
+    timer = null;
+    running = false;
+    paused = false;
+    if (powerHudTimer) {
+      clearInterval(powerHudTimer);
+      powerHudTimer = null;
+    }
+    btnStart.disabled = true;
+    btnPause.disabled = true;
+    btnPause.textContent = "暂停";
+    setModalHidden(scoreModal, true);
+    showOverlay("双人对战", "创建或加入房间开始");
+  }
+
+  function exitMultiplayer() {
+    mpMode = false;
+    clearInterval(timer);
+    timer = null;
+    running = false;
+    paused = false;
+    dead = false;
+    resetGame();
+    btnStart.disabled = false;
+    btnPause.disabled = true;
+    btnPause.textContent = "暂停";
+    showOverlay("准备好了吗？", "按「开始游戏」或空格键");
+  }
+
+  window.PixelSnakeGame = {
+    enterMultiplayer: enterMultiplayer,
+    exitMultiplayer: exitMultiplayer,
+    isMultiplayerMode: function () {
+      return mpMode;
+    },
+  };
+
 })();

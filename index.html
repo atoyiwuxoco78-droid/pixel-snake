@@ -40,6 +40,10 @@
           <button type="button" class="btn btn-danger btn-xs" id="btnLogout">退出</button>
         </div>
       </div>
+      <div class="mode-tabs" role="tablist" aria-label="游戏模式">
+        <button type="button" class="mode-tab active" id="tabModeSingle" role="tab" aria-selected="true">单人</button>
+        <button type="button" class="mode-tab" id="tabModeMp" role="tab" aria-selected="false">双人对战</button>
+      </div>
     </header>
 
     <main class="main">
@@ -63,19 +67,54 @@
           </div>
         </div>
         <div class="power-status" id="powerStatus" aria-live="polite"></div>
-        <div class="controls-hint">
-          <p>方向键 / WASD</p>
-          <p>空格 · 暂停</p>
-          <p class="hint-legend">
-            <span class="leg-slow">■</span>减速
-            <span class="leg-phase">■</span>穿墙
-          </p>
-          <p class="install-hint">可在浏览器菜单里安装到桌面</p>
+
+        <div id="spControls">
+          <div class="controls-hint">
+            <p>方向键 / WASD</p>
+            <p>空格 · 暂停</p>
+            <p class="hint-legend">
+              <span class="leg-slow">■</span>减速
+              <span class="leg-phase">■</span>穿墙
+            </p>
+            <p class="install-hint">可在浏览器菜单里安装到桌面</p>
+          </div>
+          <div class="btn-stack">
+            <button type="button" class="btn btn-primary btn-cta" id="btnStart">开始游戏</button>
+            <button type="button" class="btn btn-secondary" id="btnPause" disabled>暂停</button>
+            <button type="button" class="btn btn-secondary" id="btnRestart">重新开始</button>
+          </div>
         </div>
-        <div class="btn-stack">
-          <button type="button" class="btn btn-primary btn-cta" id="btnStart">开始游戏</button>
-          <button type="button" class="btn btn-secondary" id="btnPause" disabled>暂停</button>
-          <button type="button" class="btn btn-secondary" id="btnRestart">重新开始</button>
+
+        <div class="mp-panel hidden" id="mpPanel" hidden>
+          <div class="mp-lobby" id="mpLobby">
+            <p class="mp-hint">需登录 · 同房间实时对战</p>
+            <button type="button" class="btn btn-primary btn-cta" id="btnMpCreate">创建房间</button>
+            <label class="mp-label" for="mpJoinCode">房间号</label>
+            <input type="text" id="mpJoinCode" class="mp-input" maxlength="6" placeholder="6 位房间号" autocomplete="off" spellcheck="false" />
+            <button type="button" class="btn btn-secondary" id="btnMpJoin">加入房间</button>
+            <p class="mp-ttl">房间约 30 分钟后过期</p>
+          </div>
+          <div class="mp-inroom hidden" id="mpInRoom" hidden>
+            <div class="mp-code-box">
+              <div class="mp-code-label">房间号</div>
+              <div class="mp-code neon-cyan" id="mpRoomCodeDisplay">------</div>
+            </div>
+            <p class="mp-role" id="mpRoleLabel"></p>
+            <p class="mp-players" id="mpPlayers"></p>
+            <div class="mp-scores">
+              <div class="mp-score-box">
+                <span class="mp-score-label neon-cyan">主机</span>
+                <span class="mp-score-val" id="mpScoreH">0</span>
+              </div>
+              <div class="mp-score-box">
+                <span class="mp-score-label neon-magenta">客机</span>
+                <span class="mp-score-val" id="mpScoreG">0</span>
+              </div>
+            </div>
+            <p class="mp-color-hint"><span class="leg-host">■</span>青色主机 · <span class="leg-guest">■</span>品红客机</p>
+            <button type="button" class="btn btn-danger" id="btnMpLeave">退出房间</button>
+          </div>
+          <p class="mp-status" id="mpStatus" aria-live="polite"></p>
         </div>
       </aside>
 
@@ -131,7 +170,7 @@
     </main>
 
     <footer class="footer">
-      <span id="footerNote">本地存储 · 登录后同步云端排行榜</span>
+      <span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
     </footer>
   </div>
 
@@ -168,6 +207,7 @@
 
   <script src="./game.js"></script>
   <script type="module" src="./auth.js"></script>
+  <script type="module" src="./multiplayer.js"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
