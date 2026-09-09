@@ -108,7 +108,7 @@
       color: "#ff9f43",
       highlight: "#ffd0a0",
       toastClass: "toast-shield",
-      timed: true,
+      timed: false,
     },
   };
 
@@ -159,7 +159,8 @@
   let pendingScore = 0;
   let activePower = null; // { type, endsAt } timed powers
   let doubleFoodsLeft = 0; // 双倍分: next N foods
-  let shieldCharges = 0; // 护盾: absorb one hit while timed/charged
+  let shieldCharges = 0; // 护盾: one charge, no time limit until used
+  let invulnUntil = 0; // brief invulnerability after shield absorb
   let toastTimer = null;
   let powerHudTimer = null;
   let mpMode = false; // when true, single-player yields canvas/input to multiplayer
@@ -429,8 +430,15 @@
     }, 1100);
   }
 
+  function isInvulnerable() {
+    return Date.now() < invulnUntil;
+  }
+
   function updatePowerHud() {
     const parts = [];
+    if (isInvulnerable()) {
+      parts.push("无敌");
+    }
     if (activePower) {
       const left = Math.max(0, Math.ceil((activePower.endsAt - Date.now()) / 1000));
       const meta = POWER_TYPES[activePower.type];
@@ -439,22 +447,22 @@
     if (doubleFoodsLeft > 0) {
       parts.push("双倍分×" + doubleFoodsLeft);
     }
-    if (shieldCharges > 0 && !(activePower && activePower.type === "shield")) {
+    if (shieldCharges > 0) {
       parts.push("护盾");
     }
     powerStatusEl.textContent = parts.join(" · ");
   }
 
   function clearActivePower() {
-    if (activePower && activePower.type === "shield") {
-      // timed shield expired without use
-      shieldCharges = 0;
-    }
+    // Never clear shieldCharges here — shield is not a timed activePower
     activePower = null;
     updatePowerHud();
-    if (powerHudTimer) {
-      clearInterval(powerHudTimer);
-      powerHudTimer = null;
+    // Keep HUD ticker alive for shield / invuln / double; only stop if idle
+    if (doubleFoodsLeft <= 0 && shieldCharges <= 0 && !isInvulnerable()) {
+      if (powerHudTimer) {
+        clearInterval(powerHudTimer);
+        powerHudTimer = null;
+      }
     }
     restartTimer();
   }
@@ -467,11 +475,19 @@
       } else {
         updatePowerHud();
       }
-      if (!activePower && doubleFoodsLeft <= 0 && shieldCharges <= 0) {
+      // Flash draw while invulnerable
+      if (isInvulnerable()) {
+        draw();
+      } else if (invulnUntil > 0) {
+        invulnUntil = 0;
+        updatePowerHud();
+        draw();
+      }
+      if (!activePower && doubleFoodsLeft <= 0 && shieldCharges <= 0 && !isInvulnerable()) {
         clearInterval(powerHudTimer);
         powerHudTimer = null;
       }
-    }, 200);
+    }, 100);
   }
 
   function shrinkSnake(n) {
@@ -500,14 +516,17 @@
       return;
     }
 
-    // Timed: slow / phase / shield (replaces previous timed power)
-    if (activePower && activePower.type === "shield" && type !== "shield") {
-      shieldCharges = 0;
-    }
-    activePower = { type: type, endsAt: Date.now() + POWERUP_DURATION_MS };
+    // Shield: one charge, no timed expiry (does not replace / clear other powers)
     if (type === "shield") {
       shieldCharges = 1;
+      showToast("护盾!", meta.toastClass);
+      updatePowerHud();
+      startPowerHudTicker();
+      return;
     }
+
+    // Timed: slow / phase only — keep unused shield charges
+    activePower = { type: type, endsAt: Date.now() + POWERUP_DURATION_MS };
     showToast(meta.label + "!", meta.toastClass);
     updatePowerHud();
     startPowerHudTicker();
@@ -519,21 +538,20 @@
   }
 
   function hasShield() {
-    if (shieldCharges <= 0) return false;
-    if (activePower && activePower.type === "shield") {
-      return Date.now() < activePower.endsAt;
-    }
     return shieldCharges > 0;
   }
 
   function consumeShield() {
     shieldCharges = 0;
-    if (activePower && activePower.type === "shield") {
-      activePower = null;
-      restartTimer();
-    }
+    invulnUntil = Date.now() + 1200;
     showToast("护盾抵挡!", "toast-shield");
+    setTimeout(function () {
+      if (isInvulnerable()) {
+        showToast("无敌!", "toast-shield");
+      }
+    }, 550);
     updatePowerHud();
+    startPowerHudTicker();
   }
 
   // ----- Occupancy helpers -----
@@ -727,6 +745,7 @@
     powerUp = null;
     doubleFoodsLeft = 0;
     shieldCharges = 0;
+    invulnUntil = 0;
     clearActivePower();
     // Hell starts with obstacles at level 1
     if (diff.obstacleStartLevel <= 1) {
@@ -994,11 +1013,14 @@
     let ny = head.y + d.y;
     const phasing = isPhasing();
 
-    // Wall collision / wrap when phasing / absorb with shield
+    // Wall collision / wrap when phasing / absorb with shield / skip while invuln
     if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) {
       if (phasing) {
         nx = ((nx % COLS) + COLS) % COLS;
         ny = ((ny % ROWS) + ROWS) % ROWS;
+      } else if (isInvulnerable()) {
+        draw();
+        return; // skip move during post-shield invuln
       } else if (hasShield()) {
         consumeShield();
         draw();
@@ -1020,6 +1042,10 @@
         }
       }
       if (hitObs) {
+        if (isInvulnerable()) {
+          draw();
+          return;
+        }
         if (hasShield()) {
           consumeShield();
           draw();
@@ -1036,7 +1062,11 @@
     const willGrow = !!eaten;
     for (let i = 0; i < snake.length - (willGrow ? 0 : 1); i++) {
       if (snake[i].x === nx && snake[i].y === ny) {
-        // Shield can absorb one self-hit; phase does not
+        // Invuln / shield absorb one self-hit; phase does not
+        if (isInvulnerable()) {
+          draw();
+          return;
+        }
         if (hasShield()) {
           consumeShield();
           draw();
@@ -1191,6 +1221,8 @@
 
     // Snake
     const phasing = isPhasing();
+    const invuln = isInvulnerable();
+    const invulnFlash = invuln && Math.floor(Date.now() / 80) % 2 === 0;
     for (let i = snake.length - 1; i >= 0; i--) {
       const seg = snake[i];
       const sx = seg.x * CELL;
@@ -1201,11 +1233,21 @@
 
       const shielded = hasShield();
       if (isHead) {
-        ctx.fillStyle = phasing ? "#b388ff" : shielded ? "#ff9f43" : "#00f0ff";
-        ctx.shadowColor = phasing ? "#b388ff" : shielded ? "#ff9f43" : "#00f0ff";
+        if (invuln) {
+          ctx.fillStyle = invulnFlash ? "#ffe566" : "#ffd700";
+          ctx.shadowColor = "#ffd700";
+        } else {
+          ctx.fillStyle = phasing ? "#b388ff" : shielded ? "#ff9f43" : "#00f0ff";
+          ctx.shadowColor = phasing ? "#b388ff" : shielded ? "#ff9f43" : "#00f0ff";
+        }
         ctx.shadowBlur = 10;
       } else {
-        if (phasing) {
+        if (invuln) {
+          const g = Math.floor(140 + (1 - t) * 80);
+          ctx.fillStyle = invulnFlash
+            ? "rgb(255," + Math.min(255, g + 40) + ",80)"
+            : "rgb(" + Math.min(255, g + 60) + "," + Math.floor(g * 0.7) + ",30)";
+        } else if (phasing) {
           const g = Math.floor(120 + (1 - t) * 100);
           ctx.fillStyle = "rgb(" + g + "," + Math.floor(g * 0.7) + ",255)";
         } else if (activePower && activePower.type === "slow") {
@@ -1226,6 +1268,11 @@
 
       ctx.fillRect(sx + pad, sy + pad, CELL - pad * 2, CELL - pad * 2);
       ctx.shadowBlur = 0;
+      if (invuln) {
+        ctx.strokeStyle = invulnFlash ? "#fff3a8" : "#ffd700";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(sx + pad + 0.5, sy + pad + 0.5, CELL - pad * 2 - 1, CELL - pad * 2 - 1);
+      }
 
       if (isHead) {
         ctx.fillStyle = phasing ? "#efe6ff" : "#a8ffff";
