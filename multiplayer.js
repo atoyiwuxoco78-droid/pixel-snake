@@ -108,7 +108,7 @@ function cellKey(x, y) {
   return x + "," + y;
 }
 
-function occupiedKeys(snakeH, snakeG, food) {
+function occupiedKeys(snakeH, snakeG, foods) {
   const set = new Set();
   (snakeH || []).forEach(function (p) {
     set.add(cellKey(p.x, p.y));
@@ -116,20 +116,150 @@ function occupiedKeys(snakeH, snakeG, food) {
   (snakeG || []).forEach(function (p) {
     set.add(cellKey(p.x, p.y));
   });
-  if (food) set.add(cellKey(food.x, food.y));
+  (foods || []).forEach(function (f) {
+    if (f) set.add(cellKey(f.x, f.y));
+  });
   return set;
 }
 
-function randomEmptyFood(snakeH, snakeG) {
-  const set = occupiedKeys(snakeH, snakeG, null);
+function freeOrthoNeighbors(x, y, occupied) {
+  let n = 0;
+  const dirs = [
+    [0, 1],
+    [0, -1],
+    [1, 0],
+    [-1, 0],
+  ];
+  for (let i = 0; i < dirs.length; i++) {
+    const nx = x + dirs[i][0];
+    const ny = y + dirs[i][1];
+    if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
+    if (!occupied.has(cellKey(nx, ny))) n++;
+  }
+  return n;
+}
+
+function filterPrefer(pool, pred) {
+  const ok = [];
+  for (let i = 0; i < pool.length; i++) {
+    if (pred(pool[i])) ok.push(pool[i]);
+  }
+  return ok.length ? ok : pool;
+}
+
+/** Smart empty food cell; avoids dead ends + proximity to other foods. */
+function randomEmptyFood(snakeH, snakeG, otherFoods, headDir) {
+  const occupied = occupiedKeys(snakeH, snakeG, otherFoods || []);
   const empties = [];
   for (let y = 0; y < ROWS; y++) {
     for (let x = 0; x < COLS; x++) {
-      if (!set.has(cellKey(x, y))) empties.push({ x: x, y: y });
+      if (!occupied.has(cellKey(x, y))) empties.push({ x: x, y: y });
     }
   }
   if (!empties.length) return { x: 10, y: 10 };
-  return empties[Math.floor(Math.random() * empties.length)];
+
+  let pool = empties;
+  pool = filterPrefer(pool, function (c) {
+    return freeOrthoNeighbors(c.x, c.y, occupied) >= 2;
+  });
+
+  // Prefer not immediately in front of either snake head along facing
+  const heads = [];
+  if (snakeH && snakeH[0] && headDir && headDir.host && DIRS[headDir.host]) {
+    heads.push({ h: snakeH[0], d: DIRS[headDir.host] });
+  }
+  if (snakeG && snakeG[0] && headDir && headDir.guest && DIRS[headDir.guest]) {
+    heads.push({ h: snakeG[0], d: DIRS[headDir.guest] });
+  }
+  if (heads.length) {
+    pool = filterPrefer(pool, function (c) {
+      for (let i = 0; i < heads.length; i++) {
+        const h = heads[i].h;
+        const d = heads[i].d;
+        for (let dist = 1; dist <= 2; dist++) {
+          if (h.x + d.x * dist === c.x && h.y + d.y * dist === c.y) return false;
+        }
+      }
+      return true;
+    });
+  }
+
+  const others = otherFoods || [];
+  if (others.length) {
+    pool = filterPrefer(pool, function (c) {
+      for (let i = 0; i < others.length; i++) {
+        const f = others[i];
+        if (!f) continue;
+        if (Math.abs(c.x - f.x) + Math.abs(c.y - f.y) < 2) return false;
+      }
+      return true;
+    });
+  }
+
+  let bestN = -1;
+  for (let i = 0; i < pool.length; i++) {
+    const n = freeOrthoNeighbors(pool[i].x, pool[i].y, occupied);
+    if (n > bestN) bestN = n;
+  }
+  if (bestN >= 0) {
+    const top = [];
+    for (let i = 0; i < pool.length; i++) {
+      if (freeOrthoNeighbors(pool[i].x, pool[i].y, occupied) >= bestN) top.push(pool[i]);
+    }
+    if (top.length) pool = top;
+  }
+
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/** Normalize foods from new `foods[]` or legacy single `food`. */
+function normalizeFoods(state, snakeH, snakeG, headDir, opts) {
+  opts = opts || {};
+  let foods = [];
+  if (state && Array.isArray(state.foods) && state.foods.length) {
+    foods = state.foods
+      .filter(function (f) {
+        return f && typeof f.x === "number" && typeof f.y === "number";
+      })
+      .map(function (f) {
+        return { x: f.x, y: f.y };
+      });
+  } else if (state && state.food && typeof state.food.x === "number") {
+    foods = [{ x: state.food.x, y: state.food.y }];
+  }
+  if (opts.ensureTwo !== false) {
+    while (foods.length < 2) {
+      const cell = randomEmptyFood(snakeH, snakeG, foods, headDir);
+      if (!cell) break;
+      const dup = foods.some(function (f) {
+        return f.x === cell.x && f.y === cell.y;
+      });
+      if (dup) break;
+      foods.push(cell);
+    }
+  }
+  return foods.slice(0, 2);
+}
+
+function foodAt(foods, x, y) {
+  for (let i = 0; i < (foods || []).length; i++) {
+    const f = foods[i];
+    if (f && f.x === x && f.y === y) return { food: f, index: i };
+  }
+  return null;
+}
+
+function replaceFoodAt(foods, index, snakeH, snakeG, headDir) {
+  const next = foods.slice();
+  next.splice(index, 1);
+  const cell = randomEmptyFood(snakeH, snakeG, next, headDir);
+  if (cell) next.push(cell);
+  while (next.length < 2) {
+    const c = randomEmptyFood(snakeH, snakeG, next, headDir);
+    if (!c) break;
+    next.push(c);
+  }
+  return next.slice(0, 2);
 }
 
 function initialState() {
@@ -144,10 +274,13 @@ function initialState() {
     { x: COLS - 4, y: midY },
     { x: COLS - 3, y: midY },
   ];
+  const headDir = { host: "right", guest: "left" };
+  const foods = normalizeFoods(null, snakeH, snakeG, headDir);
   return {
     snakeH: snakeH,
     snakeG: snakeG,
-    food: randomEmptyFood(snakeH, snakeG),
+    foods: foods,
+    food: foods[0] || null, // legacy alias for older guests
     scoreH: 0,
     scoreG: 0,
     aliveH: true,
@@ -184,7 +317,7 @@ let pendingStatePayload = null;
 const STATE_WRITE_MIN_MS = 70; // slight throttle; dirs still immediate
 // Guest prediction
 let predSnakeG = null;
-let predFood = null;
+let predFoods = null;
 let predTimer = null;
 let lastAuthTick = -1;
 let guestDirWriteBusy = false;
@@ -333,7 +466,7 @@ function stopGuestPredict() {
     predTimer = null;
   }
   predSnakeG = null;
-  predFood = null;
+  predFoods = null;
   lastAuthTick = -1;
 }
 
@@ -613,9 +746,9 @@ function applyDir(current, pending, len) {
   return pending;
 }
 
-function moveSnake(snake, dir, food, otherSnake) {
+function moveSnake(snake, dir, foods, otherSnake) {
   if (!snake || !snake.length) {
-    return { snake: snake, dir: dir, grew: false, dead: true };
+    return { snake: snake, dir: dir, grew: false, dead: true, eatIndex: -1 };
   }
   const d = DIRS[dir];
   const head = snake[0];
@@ -623,28 +756,35 @@ function moveSnake(snake, dir, food, otherSnake) {
   const ny = head.y + d.y;
 
   if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) {
-    return { snake: snake, dir: dir, grew: false, dead: true };
+    return { snake: snake, dir: dir, grew: false, dead: true, eatIndex: -1 };
   }
 
-  const willGrow = food && nx === food.x && ny === food.y;
+  const hit = foodAt(foods, nx, ny);
+  const willGrow = !!hit;
 
   // Self collision
   for (let i = 0; i < snake.length - (willGrow ? 0 : 1); i++) {
     if (snake[i].x === nx && snake[i].y === ny) {
-      return { snake: snake, dir: dir, grew: false, dead: true };
+      return { snake: snake, dir: dir, grew: false, dead: true, eatIndex: -1 };
     }
   }
   // Other snake collision
   for (let i = 0; i < (otherSnake || []).length; i++) {
     if (otherSnake[i].x === nx && otherSnake[i].y === ny) {
-      return { snake: snake, dir: dir, grew: false, dead: true };
+      return { snake: snake, dir: dir, grew: false, dead: true, eatIndex: -1 };
     }
   }
 
   const next = cloneSegs(snake);
   next.unshift({ x: nx, y: ny });
   if (!willGrow) next.pop();
-  return { snake: next, dir: dir, grew: !!willGrow, dead: false };
+  return {
+    snake: next,
+    dir: dir,
+    grew: willGrow,
+    dead: false,
+    eatIndex: hit ? hit.index : -1,
+  };
 }
 
 async function flushHostStateWrite() {
@@ -694,32 +834,33 @@ async function hostTick() {
   // Move host first, then guest against new host body (simple sequential)
   let snakeH = cloneSegs(prev.snakeH);
   let snakeG = cloneSegs(prev.snakeG);
-  let food = prev.food ? { x: prev.food.x, y: prev.food.y } : randomEmptyFood(snakeH, snakeG);
+  const headDir = { host: localHostDir, guest: guestDir };
+  let foods = normalizeFoods(prev, snakeH, snakeG, headDir);
   let scoreH = prev.scoreH || 0;
   let scoreG = prev.scoreG || 0;
   let aliveH = true;
   let aliveG = true;
 
-  const mh = moveSnake(snakeH, localHostDir, food, snakeG);
+  const mh = moveSnake(snakeH, localHostDir, foods, snakeG);
   if (mh.dead) {
     aliveH = false;
   } else {
     snakeH = mh.snake;
-    if (mh.grew) {
+    if (mh.grew && mh.eatIndex >= 0) {
       scoreH += 10;
-      food = randomEmptyFood(snakeH, snakeG);
+      foods = replaceFoodAt(foods, mh.eatIndex, snakeH, snakeG, headDir);
     }
   }
 
   // Guest moves against updated host (or original if host died mid-tick — still check)
-  const mg = moveSnake(snakeG, guestDir, food, snakeH);
+  const mg = moveSnake(snakeG, guestDir, foods, snakeH);
   if (mg.dead) {
     aliveG = false;
   } else {
     snakeG = mg.snake;
-    if (mg.grew) {
+    if (mg.grew && mg.eatIndex >= 0) {
       scoreG += 10;
-      food = randomEmptyFood(snakeH, snakeG);
+      foods = replaceFoodAt(foods, mg.eatIndex, snakeH, snakeG, headDir);
     }
   }
 
@@ -735,7 +876,8 @@ async function hostTick() {
   const nextState = {
     snakeH: snakeH,
     snakeG: snakeG,
-    food: food,
+    foods: foods,
+    food: foods[0] || null, // legacy alias
     scoreH: scoreH,
     scoreG: scoreG,
     aliveH: aliveH,
@@ -831,7 +973,16 @@ function onGuestAuthState(state, room) {
   lastAuthTick = state.tick || 0;
   // Reconcile prediction to authoritative snapshot
   predSnakeG = cloneSegs(state.snakeG);
-  predFood = state.food ? { x: state.food.x, y: state.food.y } : null;
+  predFoods = normalizeFoods(
+    state,
+    state.snakeH,
+    state.snakeG,
+    {
+      host: (room && room.hostDir) || "right",
+      guest: (room && room.guestDir) || "left",
+    },
+    { ensureTwo: false }
+  );
   if (room && room.guestDir && DIRS[room.guestDir]) {
     // Keep local pending if player already turned since snapshot
     if (!pendingGuestDir || pendingGuestDir === room.guestDir) {
@@ -864,8 +1015,20 @@ function guestPredictTick() {
   // Soft walls: stop predicting into death; wait for host
   if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
 
-  const food = predFood || auth.food;
-  const willGrow = food && nx === food.x && ny === food.y;
+  const foods =
+    predFoods ||
+    normalizeFoods(
+      auth,
+      auth.snakeH,
+      auth.snakeG,
+      {
+        host: (roomData && roomData.hostDir) || "right",
+        guest: dir,
+      },
+      { ensureTwo: false }
+    );
+  const hit = foodAt(foods, nx, ny);
+  const willGrow = !!hit;
 
   // Don't predict through self / host body — freeze until auth
   for (let i = 0; i < predSnakeG.length - (willGrow ? 0 : 1); i++) {
@@ -884,7 +1047,8 @@ function guestPredictTick() {
   const drawState = {
     snakeH: auth.snakeH,
     snakeG: predSnakeG,
-    food: food,
+    foods: foods,
+    food: foods[0] || null,
     scoreH: auth.scoreH,
     scoreG: auth.scoreG,
     aliveH: auth.aliveH,
@@ -979,10 +1143,14 @@ function renderState(state, room, opts) {
   lastRenderedTick = state.tick || 0;
   drawBoardBg();
 
-  // Food
-  if (state.food) {
-    const fx = state.food.x * CELL;
-    const fy = state.food.y * CELL;
+  // Foods (×2) — green apples in MP; tolerate legacy single food
+  const foodsDraw = normalizeFoods(state, state.snakeH, state.snakeG, null, {
+    ensureTwo: false,
+  });
+  for (let fi = 0; fi < foodsDraw.length; fi++) {
+    const f = foodsDraw[fi];
+    const fx = f.x * CELL;
+    const fy = f.y * CELL;
     const pad = 3;
     ctx.fillStyle = "#39ff14";
     ctx.shadowColor = "#39ff14";
@@ -991,6 +1159,8 @@ function renderState(state, room, opts) {
     ctx.shadowBlur = 0;
     ctx.fillStyle = "#b8ff9a";
     ctx.fillRect(fx + pad + 4, fy + pad + 3, 6, 6);
+    ctx.fillStyle = "#ff2bd6";
+    ctx.fillRect(fx + CELL / 2 - 2, fy + 2, 4, 5);
   }
 
   const hDir = (room && room.hostDir) || "right";

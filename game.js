@@ -132,7 +132,7 @@
   const btnSubmitScore = document.getElementById("btnSubmitScore");
   const btnSkipScore = document.getElementById("btnSkipScore");
   const dpad = document.getElementById("dpad");
-  const difficultySelect = document.getElementById("difficultySelect");
+  const difficultyTabs = document.getElementById("difficultyTabs");
 
   // ----- State -----
   let difficultyId = "normal";
@@ -140,7 +140,7 @@
   let snake = [];
   let dir = "right";
   let nextDir = "right";
-  let food = null;
+  let foods = []; // always try to keep 2 apples on the board
   let powerUp = null; // { x, y, type }
   let obstacles = []; // [{ x, y }, ...]
   let score = 0;
@@ -170,6 +170,17 @@
     return "normal";
   }
 
+  function syncDifficultyTabs() {
+    if (!difficultyTabs) return;
+    const buttons = difficultyTabs.querySelectorAll(".diff-tab[data-diff]");
+    buttons.forEach(function (btn) {
+      const on = btn.getAttribute("data-diff") === difficultyId;
+      btn.classList.toggle("active", on);
+      btn.setAttribute("aria-checked", on ? "true" : "false");
+      btn.tabIndex = on ? 0 : -1;
+    });
+  }
+
   function applyDifficulty(id, opts) {
     const next = DIFFICULTY[id] ? id : "normal";
     difficultyId = next;
@@ -177,9 +188,7 @@
     try {
       localStorage.setItem(DIFFICULTY_KEY, next);
     } catch (_) {}
-    if (difficultySelect && difficultySelect.value !== next) {
-      difficultySelect.value = next;
-    }
+    syncDifficultyTabs();
     // Mid-run: retune timer; obstacles rebuild on next level sync / restart
     if (opts && opts.restartTimer) restartTimer();
   }
@@ -430,7 +439,9 @@
     obstacles.forEach(function (o) {
       set.add(o.x + "," + o.y);
     });
-    if (food) set.add(food.x + "," + food.y);
+    foods.forEach(function (f) {
+      set.add(f.x + "," + f.y);
+    });
     if (powerUp) set.add(powerUp.x + "," + powerUp.y);
     if (extra) {
       extra.forEach(function (p) {
@@ -440,7 +451,53 @@
     return set;
   }
 
-  function randomEmptyCell(extraOccupied) {
+  function freeOrthoNeighbors(x, y, occupied) {
+    let n = 0;
+    const dirs = [
+      [0, 1],
+      [0, -1],
+      [1, 0],
+      [-1, 0],
+    ];
+    for (let i = 0; i < dirs.length; i++) {
+      const nx = x + dirs[i][0];
+      const ny = y + dirs[i][1];
+      if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
+      if (!occupied.has(nx + "," + ny)) n++;
+    }
+    return n;
+  }
+
+  function isNearHeadCone(x, y, avoidDist) {
+    const head = snake[0];
+    if (!head) return false;
+    const d = DIRS[dir] || DIRS.right;
+    const maxD = avoidDist == null ? 2 : avoidDist;
+    for (let dist = 1; dist <= maxD; dist++) {
+      if (head.x + d.x * dist === x && head.y + d.y * dist === y) return true;
+    }
+    return false;
+  }
+
+  function manhattan(a, b) {
+    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+  }
+
+  function filterPrefer(pool, pred) {
+    const ok = [];
+    for (let i = 0; i < pool.length; i++) {
+      if (pred(pool[i])) ok.push(pool[i]);
+    }
+    return ok.length ? ok : pool;
+  }
+
+  /**
+   * Smart empty-cell picker (food / power-ups / obstacles).
+   * Prefer open neighbors, avoid head cone, keep distance from other foods.
+   * Falls back to any free cell when filters empty.
+   */
+  function randomEmptyCell(extraOccupied, opts) {
+    opts = opts || {};
     const occupied = occupiedSet(extraOccupied);
     const free = [];
     for (let y = 0; y < ROWS; y++) {
@@ -450,7 +507,48 @@
       }
     }
     if (!free.length) return null;
-    return free[Math.floor(Math.random() * free.length)];
+
+    let pool = free;
+    // Prefer cells with at least 2 free orthogonal neighbors (avoid dead ends)
+    pool = filterPrefer(pool, function (c) {
+      return freeOrthoNeighbors(c.x, c.y, occupied) >= 2;
+    });
+
+    if (opts.avoidHeadCone !== false && snake.length) {
+      const avoidDist = opts.headAvoidDist == null ? 2 : opts.headAvoidDist;
+      pool = filterPrefer(pool, function (c) {
+        return !isNearHeadCone(c.x, c.y, avoidDist);
+      });
+    }
+
+    const others = opts.otherFoods || [];
+    if (others.length) {
+      const minDist = opts.minFoodDist == null ? 2 : opts.minFoodDist;
+      pool = filterPrefer(pool, function (c) {
+        for (let i = 0; i < others.length; i++) {
+          if (manhattan(c, others[i]) < minDist) return false;
+        }
+        return true;
+      });
+    }
+
+    // Among remaining, prefer the most open cells
+    let bestN = -1;
+    for (let i = 0; i < pool.length; i++) {
+      const n = freeOrthoNeighbors(pool[i].x, pool[i].y, occupied);
+      if (n > bestN) bestN = n;
+    }
+    if (bestN >= 0) {
+      const top = [];
+      for (let i = 0; i < pool.length; i++) {
+        if (freeOrthoNeighbors(pool[i].x, pool[i].y, occupied) >= bestN) {
+          top.push(pool[i]);
+        }
+      }
+      if (top.length) pool = top;
+    }
+
+    return pool[Math.floor(Math.random() * pool.length)];
   }
 
   function obstacleCountForLevel(lv) {
@@ -471,7 +569,7 @@
       reserved.push({ x: midX + dx, y: midY });
     }
     for (let i = 0; i < targetCount; i++) {
-      const cell = randomEmptyCell(reserved);
+      const cell = randomEmptyCell(reserved, { avoidHeadCone: false, otherFoods: [] });
       if (!cell) break;
       obstacles.push(cell);
     }
@@ -483,13 +581,19 @@
     const leveledUp = newLevel > level;
     level = newLevel;
     rebuildObstacles(obstacleCountForLevel(level));
-    // Drop power-up if now blocked (shouldn't happen often)
+    // Drop / replace items if now blocked by new obstacles
     if (powerUp) {
       const blocked = obstacles.some(function (o) {
         return o.x === powerUp.x && o.y === powerUp.y;
       });
       if (blocked) powerUp = null;
     }
+    foods = foods.filter(function (f) {
+      return !obstacles.some(function (o) {
+        return o.x === f.x && o.y === f.y;
+      });
+    });
+    ensureTwoFoods();
     if (leveledUp && showFeedback) {
       showToast("关卡 " + level + "!", "toast-level");
     }
@@ -513,6 +617,7 @@
     foodsEaten = 0;
     tickMs = diff.baseTickMs;
     obstacles = [];
+    foods = [];
     powerUp = null;
     doubleFoodsLeft = 0;
     shieldCharges = 0;
@@ -523,20 +628,58 @@
     }
     dead = false;
     paused = false;
-    placeFood();
+    placeFoods();
     updateHUD();
     draw();
   }
 
-  function placeFood() {
-    const cell = randomEmptyCell();
-    food = cell || { x: 1, y: 1 };
+  function ensureTwoFoods() {
+    while (foods.length < 2) {
+      const cell = randomEmptyCell(null, {
+        otherFoods: foods.slice(),
+        avoidHeadCone: true,
+        headAvoidDist: 2,
+        minFoodDist: 2,
+      });
+      if (!cell) {
+        const any = randomEmptyCell(null, { avoidHeadCone: false, otherFoods: [] });
+        if (!any) break;
+        foods.push(any);
+      } else {
+        foods.push(cell);
+      }
+    }
+  }
+
+  function placeFoods() {
+    foods = [];
+    ensureTwoFoods();
+    if (!foods.length) foods = [{ x: 1, y: 1 }, { x: COLS - 2, y: ROWS - 2 }];
+  }
+
+  function replaceEatenFood(eaten) {
+    foods = foods.filter(function (f) {
+      return !(f.x === eaten.x && f.y === eaten.y);
+    });
+    ensureTwoFoods();
+  }
+
+  function foodAt(x, y) {
+    for (let i = 0; i < foods.length; i++) {
+      if (foods[i].x === x && foods[i].y === y) return foods[i];
+    }
+    return null;
   }
 
   function maybeSpawnPowerUp() {
     if (powerUp) return;
     if (Math.random() > POWERUP_CHANCE) return;
-    const cell = randomEmptyCell();
+    const cell = randomEmptyCell(null, {
+      otherFoods: foods.slice(),
+      avoidHeadCone: true,
+      headAvoidDist: 2,
+      minFoodDist: 2,
+    });
     if (!cell) return;
     const keys = Object.keys(POWER_TYPES);
     const type = keys[Math.floor(Math.random() * keys.length)];
@@ -697,7 +840,7 @@
     }, 50);
   }
 
-  function onFoodEaten() {
+  function onFoodEaten(eatenCell) {
     const prevTick = currentTickMs();
     const prevLevel = level;
     const prevFoods = foodsEaten;
@@ -710,7 +853,8 @@
       updatePowerHud();
     }
     score += pts;
-    placeFood();
+    if (eatenCell) replaceEatenFood(eatenCell);
+    else ensureTwoFoods();
     maybeSpawnPowerUp();
     syncLevelAndObstacles(true);
 
@@ -782,7 +926,8 @@
     }
 
     // Self collision (ignore tail tip that will move away unless growing)
-    const willGrow = food && nx === food.x && ny === food.y;
+    const eaten = foodAt(nx, ny);
+    const willGrow = !!eaten;
     for (let i = 0; i < snake.length - (willGrow ? 0 : 1); i++) {
       if (snake[i].x === nx && snake[i].y === ny) {
         // Shield can absorb one self-hit; phase does not
@@ -807,7 +952,7 @@
     }
 
     if (willGrow) {
-      onFoodEaten();
+      onFoodEaten(eaten);
     } else {
       snake.pop();
       lengthEl.textContent = String(snake.length);
@@ -921,8 +1066,9 @@
       }
     }
 
-    // Food — glowing pixel apple
-    if (food) {
+    // Foods — glowing pixel apples (×2)
+    for (let fi = 0; fi < foods.length; fi++) {
+      const food = foods[fi];
       const fx = food.x * CELL;
       const fy = food.y * CELL;
       const pad = 3;
@@ -1122,14 +1268,42 @@
   canvas.width = COLS * CELL;
   canvas.height = ROWS * CELL;
   applyDifficulty(loadDifficulty());
-  if (difficultySelect) {
-    difficultySelect.value = difficultyId;
-    difficultySelect.addEventListener("change", function () {
-      const next = difficultySelect.value;
+  if (difficultyTabs) {
+    difficultyTabs.addEventListener("click", function (e) {
+      const btn = e.target.closest(".diff-tab[data-diff]");
+      if (!btn || !difficultyTabs.contains(btn)) return;
+      const next = btn.getAttribute("data-diff");
+      if (!DIFFICULTY[next] || next === difficultyId) {
+        syncDifficultyTabs();
+        return;
+      }
       const wasRunning = running && !paused && !dead;
       applyDifficulty(next, { restartTimer: wasRunning });
       if (!running || dead) {
         // Preview obstacle density on idle board for hell/easy
+        resetGame();
+        showOverlay("准备好了吗？", "难度：" + diff.label + " · 按「开始游戏」或空格键");
+      } else {
+        showToast("难度：" + diff.label, "");
+      }
+    });
+    difficultyTabs.addEventListener("keydown", function (e) {
+      const order = ["easy", "normal", "hell"];
+      const idx = order.indexOf(difficultyId);
+      if (idx < 0) return;
+      let nextIdx = -1;
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") nextIdx = (idx + 1) % order.length;
+      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") nextIdx = (idx - 1 + order.length) % order.length;
+      else if (e.key === "Home") nextIdx = 0;
+      else if (e.key === "End") nextIdx = order.length - 1;
+      else return;
+      e.preventDefault();
+      const next = order[nextIdx];
+      const wasRunning = running && !paused && !dead;
+      applyDifficulty(next, { restartTimer: wasRunning });
+      const focusBtn = difficultyTabs.querySelector('.diff-tab[data-diff="' + next + '"]');
+      if (focusBtn) focusBtn.focus();
+      if (!running || dead) {
         resetGame();
         showOverlay("准备好了吗？", "难度：" + diff.label + " · 按「开始游戏」或空格键");
       } else {

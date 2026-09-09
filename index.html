@@ -70,17 +70,18 @@
 
         <div id="spControls">
           <div class="difficulty-row">
-            <label class="difficulty-label" for="difficultySelect">难度</label>
-            <select id="difficultySelect" class="difficulty-select" aria-label="单人难度">
-              <option value="easy">简单</option>
-              <option value="normal" selected>普通</option>
-              <option value="hell">地狱</option>
-            </select>
+            <span class="difficulty-label" id="difficultyLabel">难度</span>
+            <div class="diff-tabs" id="difficultyTabs" role="radiogroup" aria-labelledby="difficultyLabel">
+              <button type="button" class="diff-tab" role="radio" data-diff="easy" aria-checked="false">简单</button>
+              <button type="button" class="diff-tab active" role="radio" data-diff="normal" aria-checked="true">普通</button>
+              <button type="button" class="diff-tab" role="radio" data-diff="hell" aria-checked="false">地狱</button>
+            </div>
           </div>
           <div class="controls-hint">
             <p>方向键 / WASD</p>
             <p>空格 · 暂停</p>
             <p class="hint-legend">
+              <span class="leg-apple">■</span>苹果×2
               <span class="leg-slow">■</span>减速
               <span class="leg-phase">■</span>穿墙
               <span class="leg-shrink">■</span>缩短
