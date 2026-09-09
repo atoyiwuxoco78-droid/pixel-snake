@@ -22,7 +22,6 @@ import {
   orderBy,
   limit,
   getDocs,
-  serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -215,7 +214,8 @@ async function saveBestScore(pts) {
       {
         score: score,
         displayName: name,
-        updatedAt: serverTimestamp(),
+        updatedAt: Date.now(),
+        uid: user.uid,
       },
       { merge: true }
     );
