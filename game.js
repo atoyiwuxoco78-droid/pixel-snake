@@ -179,6 +179,11 @@
       btn.setAttribute("aria-checked", on ? "true" : "false");
       btn.tabIndex = on ? 0 : -1;
     });
+    const card = document.getElementById("difficultyCard");
+    const cur = document.getElementById("difficultyCurrent");
+    const label = (DIFFICULTY[difficultyId] && DIFFICULTY[difficultyId].label) || "普通";
+    if (card) card.setAttribute("data-diff", difficultyId);
+    if (cur) cur.textContent = "当前：" + label;
   }
 
   function applyDifficulty(id, opts) {

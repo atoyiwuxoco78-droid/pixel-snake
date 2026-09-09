@@ -69,12 +69,27 @@
         <div class="power-status" id="powerStatus" aria-live="polite"></div>
 
         <div id="spControls">
-          <div class="difficulty-row">
-            <span class="difficulty-label" id="difficultyLabel">难度</span>
+          <div class="difficulty-card" id="difficultyCard" data-diff="normal">
+            <div class="difficulty-card-head">
+              <span class="difficulty-label" id="difficultyLabel">单人难度</span>
+              <span class="difficulty-current" id="difficultyCurrent" aria-live="polite">当前：普通</span>
+            </div>
             <div class="diff-tabs" id="difficultyTabs" role="radiogroup" aria-labelledby="difficultyLabel">
-              <button type="button" class="diff-tab" role="radio" data-diff="easy" aria-checked="false">简单</button>
-              <button type="button" class="diff-tab active" role="radio" data-diff="normal" aria-checked="true">普通</button>
-              <button type="button" class="diff-tab" role="radio" data-diff="hell" aria-checked="false">地狱</button>
+              <button type="button" class="diff-tab" role="radio" data-diff="easy" aria-checked="false">
+                <span class="diff-tab-check" aria-hidden="true">✓</span>
+                <span class="diff-tab-name">简单</span>
+                <span class="diff-tab-desc">慢速 · 障碍少</span>
+              </button>
+              <button type="button" class="diff-tab active" role="radio" data-diff="normal" aria-checked="true">
+                <span class="diff-tab-check" aria-hidden="true">✓</span>
+                <span class="diff-tab-name">普通</span>
+                <span class="diff-tab-desc">标准节奏</span>
+              </button>
+              <button type="button" class="diff-tab" role="radio" data-diff="hell" aria-checked="false">
+                <span class="diff-tab-check" aria-hidden="true">✓</span>
+                <span class="diff-tab-name">地狱</span>
+                <span class="diff-tab-desc">极速 · 障碍密</span>
+              </button>
             </div>
           </div>
           <div class="controls-hint">
