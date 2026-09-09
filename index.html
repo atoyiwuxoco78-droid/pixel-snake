@@ -25,6 +25,20 @@
         <span class="neon-cyan">像素</span><span class="neon-magenta">贪吃蛇</span>
       </h1>
       <p class="subtitle">PIXEL SNAKE · RETRO</p>
+      <div class="account-bar" id="accountBar">
+        <div class="account-status-wrap">
+          <span class="account-label">账号</span>
+          <span class="account-status" id="accountStatus">未登录</span>
+        </div>
+        <div class="account-btns" id="accountGuestBtns">
+          <button type="button" class="btn btn-primary btn-xs" id="btnEmailRegister">邮箱注册</button>
+          <button type="button" class="btn btn-secondary btn-xs" id="btnEmailLogin">邮箱登录</button>
+          <button type="button" class="btn btn-secondary btn-xs" id="btnGoogleLogin">Google 登录</button>
+        </div>
+        <div class="account-btns hidden" id="accountUserBtns">
+          <button type="button" class="btn btn-danger btn-xs" id="btnLogout">退出</button>
+        </div>
+      </div>
     </header>
 
     <main class="main">
@@ -84,27 +98,41 @@
       </section>
 
       <aside class="panel panel-right">
-        <div class="board-header">
-          <h2 class="board-title neon-cyan">排行榜</h2>
-          <span class="board-sub">TOP 10</span>
+        <div class="board-section">
+          <div class="board-header">
+            <h2 class="board-title neon-cyan">云端排行榜</h2>
+            <span class="board-sub">TOP 10 · Firestore</span>
+          </div>
+          <ol class="leaderboard" id="cloudLeaderboard">
+            <li class="empty">加载中…</li>
+          </ol>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshCloud">刷新云端</button>
         </div>
-        <ol class="leaderboard" id="leaderboard">
-          <!-- filled by JS -->
-        </ol>
-        <button type="button" class="btn btn-danger btn-sm" id="btnClearScores">清空成绩</button>
+
+        <div class="board-section board-section-local">
+          <div class="board-header">
+            <h2 class="board-title neon-magenta">本地排行榜</h2>
+            <span class="board-sub">TOP 10 · 本机</span>
+          </div>
+          <ol class="leaderboard" id="leaderboard">
+            <!-- filled by JS -->
+          </ol>
+          <button type="button" class="btn btn-danger btn-sm" id="btnClearScores">清空本地成绩</button>
+        </div>
       </aside>
     </main>
 
     <footer class="footer">
-      <span>本地存储 · 仅本机可见</span>
+      <span id="footerNote">本地存储 · 登录后同步云端排行榜</span>
     </footer>
   </div>
 
-  <!-- Nickname modal -->
+  <!-- Nickname modal (local score) -->
   <div class="modal hidden" id="scoreModal" role="dialog" aria-labelledby="modalTitle">
     <div class="modal-box">
       <h3 class="modal-title neon-magenta" id="modalTitle">游戏结束</h3>
       <p class="modal-score">本局得分：<strong id="finalScore">0</strong></p>
+      <p class="modal-hint hidden" id="cloudSaveHint">已登录 · 更高分将同步到云端</p>
       <label class="modal-label" for="nickname">输入昵称</label>
       <input type="text" id="nickname" class="modal-input" maxlength="12" placeholder="游客" value="游客" autocomplete="off" />
       <div class="modal-actions">
@@ -114,7 +142,24 @@
     </div>
   </div>
 
+  <!-- Email auth modal -->
+  <div class="modal hidden" id="authModal" role="dialog" aria-labelledby="authModalTitle" data-mode="login">
+    <div class="modal-box modal-box-auth">
+      <h3 class="modal-title neon-cyan" id="authModalTitle">邮箱登录</h3>
+      <label class="modal-label" for="authEmail">邮箱</label>
+      <input type="email" id="authEmail" class="modal-input" autocomplete="email" placeholder="you@example.com" />
+      <label class="modal-label" for="authPassword">密码</label>
+      <input type="password" id="authPassword" class="modal-input" autocomplete="current-password" placeholder="至少 6 位" />
+      <p class="auth-error hidden" id="authError" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-primary" id="btnAuthSubmit">登录</button>
+        <button type="button" class="btn btn-secondary" id="btnAuthCancel">取消</button>
+      </div>
+    </div>
+  </div>
+
   <script src="./game.js"></script>
+  <script type="module" src="./auth.js"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {

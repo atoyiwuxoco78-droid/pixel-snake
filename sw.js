@@ -1,5 +1,5 @@
 /* Pixel Snake — offline shell service worker */
-const CACHE_NAME = 'pixel-snake-v1';
+const CACHE_NAME = 'pixel-snake-v2';
 
 function assetUrls() {
   const base = self.registration.scope;
@@ -8,6 +8,7 @@ function assetUrls() {
     './index.html',
     './style.css',
     './game.js',
+    './auth.js',
     './manifest.webmanifest',
     './icons/icon-192.png',
     './icons/icon-512.png',

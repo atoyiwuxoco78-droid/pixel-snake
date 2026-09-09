@@ -1,3 +1,5 @@
-
 .venv-icons/
 .venv*/
+firebase-debug.log
+firebase-debug.*.log
+.firebase/

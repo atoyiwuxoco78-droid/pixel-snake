@@ -1,0 +1,18 @@
+{
+  "auth": {
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Pixel Snake",
+        "supportEmail": "atoyiwuxoco78@gmail.com",
+        "authorizedRedirectUris": [
+          "https://atoyiwuxoco78-droid.github.io/pixel-snake/",
+          "https://atoyiwuxoco78-droid.github.io"
+        ]
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}

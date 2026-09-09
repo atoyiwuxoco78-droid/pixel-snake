@@ -1,6 +1,6 @@
 /**
  * 像素贪吃蛇 · Pixel Snake
- * Levels, speed ramp, power-ups, obstacles + localStorage leaderboard
+ * Levels, speed ramp, power-ups, obstacles + local/cloud leaderboard
  */
 (function () {
   "use strict";
@@ -119,7 +119,7 @@
   }
 
   function clearScores() {
-    if (!confirm("确定清空排行榜？此操作不可撤销。")) return;
+    if (!confirm("确定清空本地排行榜？此操作不可撤销。")) return;
     localStorage.removeItem(STORAGE_KEY);
     renderLeaderboard();
     updateHighScoreDisplay();
@@ -433,6 +433,28 @@
     startGame();
   }
 
+  function fb() {
+    return window.PixelSnakeFirebase || null;
+  }
+
+  function preferNickname() {
+    const api = fb();
+    if (api && api.isLoggedIn && api.isLoggedIn()) {
+      return (api.getDisplayName() || "玩家").slice(0, 12);
+    }
+    return "游客";
+  }
+
+  function syncCloudScore(pts) {
+    const api = fb();
+    if (!api || !api.isLoggedIn || !api.isLoggedIn() || !api.saveBestScore) {
+      return Promise.resolve({ saved: false });
+    }
+    return Promise.resolve(api.saveBestScore(pts)).catch(function () {
+      return { saved: false, reason: "error" };
+    });
+  }
+
   function gameOver() {
     dead = true;
     running = false;
@@ -449,7 +471,12 @@
     showOverlay("游戏结束", "得分 " + score + " · 关卡 " + level);
     pendingScore = score;
     finalScoreEl.textContent = String(score);
-    nicknameInput.value = "游客";
+    nicknameInput.value = preferNickname();
+    var cloudHint = document.getElementById("cloudSaveHint");
+    var loggedIn = !!(fb() && fb().isLoggedIn && fb().isLoggedIn());
+    if (cloudHint) cloudHint.classList.toggle("hidden", !loggedIn);
+    // Persist best score to Firestore when logged in (only if >= existing)
+    syncCloudScore(pendingScore);
     scoreModal.classList.remove("hidden");
     setTimeout(function () {
       nicknameInput.focus();
@@ -748,11 +775,17 @@
   };
 
   document.addEventListener("keydown", function (e) {
-    if (document.activeElement === nicknameInput) {
+    var authModal = document.getElementById("authModal");
+    var authOpen = authModal && !authModal.classList.contains("hidden");
+    var ae = document.activeElement;
+    if (ae === nicknameInput) {
       if (e.key === "Enter") {
         e.preventDefault();
         submitScore();
       }
+      return;
+    }
+    if (authOpen || (ae && (ae.id === "authEmail" || ae.id === "authPassword"))) {
       return;
     }
 
@@ -809,8 +842,17 @@
 
   function submitScore() {
     addScore(nicknameInput.value, pendingScore);
-    scoreModal.classList.add("hidden");
-    showOverlay("成绩已保存", "按「重新开始」或空格再来一局");
+    // Ensure cloud save even if gameOver race missed auth ready
+    syncCloudScore(pendingScore).then(function (res) {
+      scoreModal.classList.add("hidden");
+      if (res && res.saved) {
+        showOverlay("成绩已保存", "本地 + 云端已更新");
+      } else if (res && res.reason === "lower") {
+        showOverlay("成绩已保存", "本地已更新 · 未超过云端最高分");
+      } else {
+        showOverlay("成绩已保存", "按「重新开始」或空格再来一局");
+      }
+    });
   }
 
   function skipScore() {

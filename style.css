@@ -566,3 +566,121 @@ body {
   color: var(--muted);
   opacity: 0.85;
 }
+
+/* ===== Account bar / Firebase auth ===== */
+.account-bar {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 14px;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 2px solid var(--panel-border);
+  border-radius: var(--radius);
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.account-status-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  max-width: 220px;
+}
+
+.account-label {
+  font-size: 7px;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+
+.account-status {
+  font-size: 8px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  line-height: 1.5;
+}
+
+.account-status.logged-in {
+  color: var(--green);
+  text-shadow: 0 0 8px rgba(57, 255, 20, 0.35);
+}
+
+.account-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.account-btns.hidden {
+  display: none;
+}
+
+.btn-xs {
+  font-size: 8px;
+  padding: 8px 10px;
+}
+
+.modal-box-auth {
+  border-color: var(--cyan);
+  box-shadow: var(--shadow-cyan);
+}
+
+.auth-error {
+  font-size: 8px;
+  color: var(--danger);
+  line-height: 1.6;
+  margin: -8px 0 14px;
+  text-align: left;
+}
+
+.auth-error.hidden {
+  display: none;
+}
+
+.modal-hint {
+  font-size: 8px;
+  color: var(--green);
+  margin: -8px 0 16px;
+  line-height: 1.6;
+}
+
+.modal-hint.hidden {
+  display: none;
+}
+
+.board-section {
+  margin-bottom: 8px;
+}
+
+.board-section-local {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 2px dashed var(--panel-border);
+}
+
+.board-section .leaderboard {
+  min-height: 120px;
+}
+
+.panel-right .btn-sm {
+  margin-top: 8px;
+}
+
+@media (max-width: 960px) {
+  .account-status-wrap {
+    max-width: 100%;
+    align-items: center;
+    text-align: center;
+    width: 100%;
+  }
+}
