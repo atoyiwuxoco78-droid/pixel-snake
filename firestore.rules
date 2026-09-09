@@ -6,7 +6,8 @@ service cloud.firestore {
       allow create, update: if request.auth != null
         && request.auth.uid == userId
         && request.resource.data.keys().hasAll(['score', 'displayName', 'updatedAt'])
-        && request.resource.data.score is int
+        && request.resource.data.score is number
+        && request.resource.data.score == int(request.resource.data.score)
         && request.resource.data.score >= 0
         && request.resource.data.score <= 1000000
         && request.resource.data.displayName is string

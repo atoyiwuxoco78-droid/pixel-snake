@@ -448,11 +448,26 @@
   function syncCloudScore(pts) {
     const api = fb();
     if (!api || !api.isLoggedIn || !api.isLoggedIn() || !api.saveBestScore) {
-      return Promise.resolve({ saved: false });
+      return Promise.resolve({ saved: false, reason: "not-logged-in" });
     }
-    return Promise.resolve(api.saveBestScore(pts)).catch(function () {
-      return { saved: false, reason: "error" };
+    return Promise.resolve(api.saveBestScore(pts)).catch(function (err) {
+      return {
+        saved: false,
+        reason: "error",
+        message: (err && (err.message || err.code)) || "未知错误",
+      };
     });
+  }
+
+  function setModalHidden(el, hide) {
+    if (!el) return;
+    if (hide) {
+      el.setAttribute("hidden", "");
+      el.classList.add("hidden");
+    } else {
+      el.removeAttribute("hidden");
+      el.classList.remove("hidden");
+    }
   }
 
   function gameOver() {
@@ -468,16 +483,43 @@
     btnStart.disabled = false;
     btnPause.disabled = true;
     btnPause.textContent = "暂停";
-    showOverlay("游戏结束", "得分 " + score + " · 关卡 " + level);
     pendingScore = score;
     finalScoreEl.textContent = String(score);
     nicknameInput.value = preferNickname();
-    var cloudHint = document.getElementById("cloudSaveHint");
+
     var loggedIn = !!(fb() && fb().isLoggedIn && fb().isLoggedIn());
-    if (cloudHint) cloudHint.classList.toggle("hidden", !loggedIn);
-    // Persist best score to Firestore when logged in (only if >= existing)
-    syncCloudScore(pendingScore);
-    scoreModal.classList.remove("hidden");
+    var cloudHint = document.getElementById("cloudSaveHint");
+    if (cloudHint) setModalHidden(cloudHint, true);
+
+    // Logged-in: auto-save local + cloud with displayName; skip nickname modal
+    if (loggedIn) {
+      setModalHidden(scoreModal, true);
+      var name = preferNickname();
+      addScore(name, pendingScore);
+      showOverlay("游戏结束", "得分 " + score + " · 正在同步云端…");
+      syncCloudScore(pendingScore).then(function (res) {
+        if (res && res.saved) {
+          showOverlay("成绩已保存", "本地 + 云端已更新 · 「重新开始」再来一局");
+          showToast("云端上传成功", "toast-ok");
+        } else if (res && res.reason === "lower") {
+          showOverlay(
+            "成绩已保存",
+            "本地已更新 · 未超过云端最高分 · 「重新开始」再来一局"
+          );
+        } else if (res && res.reason === "error") {
+          var why = (res.message || res.code || "未知错误").toString().slice(0, 40);
+          showOverlay("云端上传失败", why + " · 本地成绩已保存");
+          showToast("云端上传失败", "toast-error");
+        } else {
+          showOverlay("成绩已保存", "本地已更新 · 「重新开始」再来一局");
+        }
+      });
+      return;
+    }
+
+    // Guests: nickname modal only
+    showOverlay("游戏结束", "得分 " + score + " · 关卡 " + level);
+    setModalHidden(scoreModal, false);
     setTimeout(function () {
       nicknameInput.focus();
       nicknameInput.select();
@@ -833,30 +875,19 @@
   });
   btnPause.addEventListener("click", pauseGame);
   btnRestart.addEventListener("click", function () {
-    if (!scoreModal.classList.contains("hidden")) {
-      scoreModal.classList.add("hidden");
-    }
+    setModalHidden(scoreModal, true);
     restartGame();
   });
   btnClearScores.addEventListener("click", clearScores);
 
   function submitScore() {
     addScore(nicknameInput.value, pendingScore);
-    // Ensure cloud save even if gameOver race missed auth ready
-    syncCloudScore(pendingScore).then(function (res) {
-      scoreModal.classList.add("hidden");
-      if (res && res.saved) {
-        showOverlay("成绩已保存", "本地 + 云端已更新");
-      } else if (res && res.reason === "lower") {
-        showOverlay("成绩已保存", "本地已更新 · 未超过云端最高分");
-      } else {
-        showOverlay("成绩已保存", "按「重新开始」或空格再来一局");
-      }
-    });
+    setModalHidden(scoreModal, true);
+    showOverlay("成绩已保存", "按「重新开始」或空格再来一局");
   }
 
   function skipScore() {
-    scoreModal.classList.add("hidden");
+    setModalHidden(scoreModal, true);
     updateHighScoreDisplay();
     showOverlay("游戏结束", "按「重新开始」或空格再来一局");
   }

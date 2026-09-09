@@ -46,6 +46,17 @@ function $(id) {
   return document.getElementById(id);
 }
 
+function setHidden(el, hide) {
+  if (!el) return;
+  if (hide) {
+    el.setAttribute("hidden", "");
+    el.classList.add("hidden");
+  } else {
+    el.removeAttribute("hidden");
+    el.classList.remove("hidden");
+  }
+}
+
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -69,7 +80,7 @@ function setAuthError(msg) {
   const el = $("authError");
   if (!el) return;
   el.textContent = msg || "";
-  el.classList.toggle("hidden", !msg);
+  setHidden(el, !msg);
 }
 
 function openAuthModal(mode) {
@@ -90,7 +101,7 @@ function openAuthModal(mode) {
   const pass = $("authPassword");
   if (email) email.value = "";
   if (pass) pass.value = "";
-  modal.classList.remove("hidden");
+  setHidden(modal, false);
   setTimeout(function () {
     if (email) email.focus();
   }, 50);
@@ -98,8 +109,29 @@ function openAuthModal(mode) {
 
 function closeAuthModal() {
   const modal = $("authModal");
-  if (modal) modal.classList.add("hidden");
+  setHidden(modal, true);
   setAuthError("");
+  const email = $("authEmail");
+  const pass = $("authPassword");
+  if (email) email.value = "";
+  if (pass) pass.value = "";
+  if (modal) modal.dataset.mode = "login";
+}
+
+function showUiToast(msg, isError) {
+  // Prefer game overlay toast if available; fall back to brief alert-style overlay text
+  const toast = $("toast");
+  if (toast) {
+    toast.textContent = msg;
+    toast.className =
+      "toast" + (isError ? " toast-error" : " toast-ok");
+    void toast.offsetWidth;
+    setTimeout(function () {
+      toast.classList.add("hidden");
+    }, 1800);
+    return;
+  }
+  console.log("[pixel-snake]", msg);
 }
 
 function updateAccountUI(user) {
@@ -107,12 +139,14 @@ function updateAccountUI(user) {
   const status = $("accountStatus");
   const guest = $("accountGuestBtns");
   const userBtns = $("accountUserBtns");
+  const emailEl = $("accountEmail");
   const footer = $("footerNote");
+  const chip = $("accountChip");
 
   if (status) {
     if (user) {
       const label = user.email || user.displayName || "已登录";
-      status.textContent = label;
+      status.textContent = "已登录";
       status.classList.add("logged-in");
       status.title = label;
     } else {
@@ -121,26 +155,50 @@ function updateAccountUI(user) {
       status.title = "";
     }
   }
-  if (guest) guest.classList.toggle("hidden", !!user);
-  if (userBtns) userBtns.classList.toggle("hidden", !user);
+  if (emailEl) {
+    emailEl.textContent = user
+      ? user.email || user.displayName || "已登录"
+      : "";
+    emailEl.title = emailEl.textContent;
+  }
+  if (chip) chip.classList.toggle("is-logged-in", !!user);
+
+  // Fully hide guest login UI when logged in; show email + 退出 only
+  setHidden(guest, !!user);
+  setHidden(userBtns, !user);
+
   if (footer) {
     footer.textContent = user
       ? "云端同步 · 登录后成绩可上传排行榜"
       : "本地存储 · 登录后同步云端排行榜";
   }
 
-  // Prefill score nickname when logged in
+  // Clear leftover auth modal if somehow still open after login
+  if (user) closeAuthModal();
+
   const nick = $("nickname");
   if (nick && user) {
     nick.value = displayNameFor(user).slice(0, 12);
   }
 }
 
+function errorReason(err) {
+  if (!err) return "未知错误";
+  const code = err.code || "";
+  if (code === "permission-denied") return "权限不足（规则拒绝）";
+  if (code === "unavailable") return "网络不可用";
+  if (code === "failed-precondition") return "需要索引或前置条件";
+  if (code === "unauthenticated") return "未登录";
+  if (code) return code;
+  return err.message || "未知错误";
+}
+
 async function saveBestScore(pts) {
   const user = auth.currentUser;
-  if (!user || typeof pts !== "number" || pts < 0) {
+  if (!user || typeof pts !== "number" || pts < 0 || !Number.isFinite(pts)) {
     return { saved: false, reason: "not-logged-in" };
   }
+  // JS SDK stores numbers as doubles — rules accept whole numbers; floor for safety
   const score = Math.floor(pts);
   const name = displayNameFor(user);
   const ref = doc(db, "scores", user.uid);
@@ -162,10 +220,13 @@ async function saveBestScore(pts) {
       { merge: true }
     );
     await loadCloudLeaderboard();
-    return { saved: true };
+    return { saved: true, score: score };
   } catch (err) {
-    console.warn("[pixel-snake] cloud score save failed", err);
-    return { saved: false, reason: "error", error: err };
+    const code = err && err.code;
+    console.warn("[pixel-snake] cloud score save failed", code, err);
+    const reason = errorReason(err);
+    showUiToast("云端上传失败：" + reason, true);
+    return { saved: false, reason: "error", error: err, code: code, message: reason };
   }
 }
 
@@ -224,9 +285,15 @@ async function loadCloudLeaderboard() {
     });
     el.innerHTML = rows.join("");
   } catch (err) {
-    console.warn("[pixel-snake] cloud leaderboard load failed", err);
-    el.innerHTML =
-      '<li class="empty">云端排行榜加载失败<br/>请检查网络</li>';
+    console.warn("[pixel-snake] cloud leaderboard load failed", err && err.code, err);
+    const code = err && err.code;
+    let msg = "云端排行榜加载失败<br/>请检查网络";
+    if (code === "failed-precondition") {
+      msg = "云端排行榜暂不可用<br/>（索引构建中）";
+    } else if (code === "permission-denied") {
+      msg = "云端排行榜无权限<br/>请稍后重试";
+    }
+    el.innerHTML = '<li class="empty">' + msg + "</li>";
   }
 }
 
@@ -302,6 +369,30 @@ async function handleLogout() {
   }
 }
 
+function wireBoardTabs() {
+  const tabs = document.querySelectorAll(".board-tab");
+  const cloud = $("boardCloud");
+  const local = $("boardLocal");
+  if (!tabs.length || !cloud || !local) return;
+
+  function activate(which) {
+    tabs.forEach(function (t) {
+      const on = t.getAttribute("data-tab") === which;
+      t.classList.toggle("active", on);
+      t.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    setHidden(cloud, which !== "cloud");
+    setHidden(local, which !== "local");
+  }
+
+  tabs.forEach(function (t) {
+    t.addEventListener("click", function () {
+      activate(t.getAttribute("data-tab") || "cloud");
+    });
+  });
+  activate("cloud");
+}
+
 function wireUI() {
   const btnReg = $("btnEmailRegister");
   const btnLogin = $("btnEmailLogin");
@@ -345,6 +436,8 @@ function wireUI() {
       }
     });
   }
+
+  wireBoardTabs();
 }
 
 // Public bridge for game.js (classic script)
