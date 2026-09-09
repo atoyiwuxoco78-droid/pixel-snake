@@ -69,12 +69,23 @@
         <div class="power-status" id="powerStatus" aria-live="polite"></div>
 
         <div id="spControls">
+          <div class="difficulty-row">
+            <label class="difficulty-label" for="difficultySelect">难度</label>
+            <select id="difficultySelect" class="difficulty-select" aria-label="单人难度">
+              <option value="easy">简单</option>
+              <option value="normal" selected>普通</option>
+              <option value="hell">地狱</option>
+            </select>
+          </div>
           <div class="controls-hint">
             <p>方向键 / WASD</p>
             <p>空格 · 暂停</p>
             <p class="hint-legend">
               <span class="leg-slow">■</span>减速
               <span class="leg-phase">■</span>穿墙
+              <span class="leg-shrink">■</span>缩短
+              <span class="leg-double">■</span>双倍分
+              <span class="leg-shield">■</span>护盾
             </p>
             <p class="install-hint">可在浏览器菜单里安装到桌面</p>
           </div>
@@ -87,7 +98,7 @@
 
         <div class="mp-panel hidden" id="mpPanel" hidden>
           <div class="mp-lobby" id="mpLobby">
-            <p class="mp-hint">需登录 · 同房间实时对战</p>
+            <p class="mp-hint">需登录 · 同房间实时对战<br/><span class="mp-fair-hint">对战固定中速（与单人难度无关）</span></p>
             <button type="button" class="btn btn-primary btn-cta" id="btnMpCreate">创建房间</button>
             <div class="mp-join-form">
               <label class="mp-label" for="mpJoinCode">加入房间</label>

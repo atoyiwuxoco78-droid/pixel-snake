@@ -1,6 +1,12 @@
 /**
  * Pixel Snake — 2-player same-room multiplayer (Firestore host-authoritative)
  * Zero-build ES module. Relative paths for GitHub Pages /pixel-snake/
+ *
+ * Latency notes (E):
+ * - Fixed MP tick ~85ms (fairness — ignores single-player difficulty).
+ * - Guest applies local head prediction between snapshots; host remains authoritative.
+ * - Guest dir uses immediate lightweight updateDoc; host state writes are lean/throttled.
+ * - RTDB not required (Firestore-only).
  */
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
@@ -30,7 +36,7 @@ const db = getFirestore(app);
 const COLS = 20;
 const ROWS = 20;
 const CELL = 28;
-const MP_TICK_MS = 110;
+const MP_TICK_MS = 85; // fixed medium tick for fairness (not SP difficulty)
 const ROOM_TTL_MS = 30 * 60 * 1000;
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -172,6 +178,17 @@ let hostTimer = null;
 let writeBusy = false;
 let startTimer = null;
 let lastRenderedTick = -1;
+let lastWrittenHostDir = null;
+let lastStateWriteAt = 0;
+let pendingStatePayload = null;
+const STATE_WRITE_MIN_MS = 70; // slight throttle; dirs still immediate
+// Guest prediction
+let predSnakeG = null;
+let predFood = null;
+let predTimer = null;
+let lastAuthTick = -1;
+let guestDirWriteBusy = false;
+let pendingGuestDirFlush = null;
 
 const canvas = $("game");
 const ctx = canvas ? canvas.getContext("2d") : null;
@@ -310,6 +327,16 @@ function stopHostLoop() {
   }
 }
 
+function stopGuestPredict() {
+  if (predTimer) {
+    clearInterval(predTimer);
+    predTimer = null;
+  }
+  predSnakeG = null;
+  predFood = null;
+  lastAuthTick = -1;
+}
+
 function clearSubscription() {
   if (unsub) {
     unsub();
@@ -328,6 +355,12 @@ async function leaveRoom(silent) {
   roomData = null;
   lastRenderedTick = -1;
   writeBusy = false;
+  pendingStatePayload = null;
+  lastWrittenHostDir = null;
+  lastStateWriteAt = 0;
+  guestDirWriteBusy = false;
+  pendingGuestDirFlush = null;
+  stopGuestPredict();
 
   // Best-effort: mark room ended if host leaves during play
   if (prevCode && prevRole === "host" && user) {
@@ -506,7 +539,7 @@ function attachRoomListener(code) {
         if (role === "host" && !hostTimer) startHostLoop();
         if (role === "guest") {
           hideOverlay();
-          renderState(data.state, data);
+          onGuestAuthState(data.state, data);
         } else if (role === "host") {
           // Host also renders from local writes / snapshot
           renderState(data.state, data);
@@ -520,6 +553,7 @@ function attachRoomListener(code) {
         drawIdleBoard();
       } else if (data.status === "ended" && data.state) {
         stopHostLoop();
+        stopGuestPredict();
         renderState(data.state, data);
         const sh = data.state.scoreH || 0;
         const sg = data.state.scoreG || 0;
@@ -550,6 +584,8 @@ async function beginMatchAsHost() {
   localHostDir = "right";
   pendingHostDir = "right";
   pendingGuestDir = "left";
+  lastWrittenHostDir = "right";
+  lastStateWriteAt = 0;
   try {
     await updateDoc(doc(db, "mp_rooms", roomCode), {
       status: "playing",
@@ -611,10 +647,39 @@ function moveSnake(snake, dir, food, otherSnake) {
   return { snake: next, dir: dir, grew: !!willGrow, dead: false };
 }
 
+async function flushHostStateWrite() {
+  if (writeBusy || !pendingStatePayload || !roomCode) return;
+  const payload = pendingStatePayload;
+  pendingStatePayload = null;
+  writeBusy = true;
+  lastStateWriteAt = Date.now();
+  try {
+    await updateDoc(doc(db, "mp_rooms", roomCode), payload);
+  } catch (err) {
+    console.warn("[mp] lean write failed, retrying full state", err);
+    try {
+      const st = roomData && roomData.state;
+      const full = {
+        state: st,
+        updatedAt: Date.now(),
+      };
+      if (payload.hostDir) full.hostDir = payload.hostDir;
+      if (payload.status) full.status = payload.status;
+      await updateDoc(doc(db, "mp_rooms", roomCode), full);
+    } catch (err2) {
+      console.warn("[mp] host write failed", err2);
+      setMpStatus("同步写入失败：" + ((err2 && err2.code) || "错误"), true);
+    }
+  } finally {
+    writeBusy = false;
+    if (pendingStatePayload) flushHostStateWrite();
+  }
+}
+
 async function hostTick() {
   if (role !== "host" || !roomCode || !roomData) return;
   if (roomData.status !== "playing") return;
-  if (writeBusy) return;
+  // Always simulate locally; coalesce Firestore writes if previous still in flight
 
   const prev = roomData.state || initialState();
   if (!prev.aliveH || !prev.aliveG) return;
@@ -681,49 +746,155 @@ async function hostTick() {
   };
 
   const ended = !aliveH || !aliveG;
-  const payload = {
+
+  // Optimistic local render immediately (snappy for host)
+  roomData = Object.assign({}, roomData, {
     hostDir: localHostDir,
-    // Do not write guestDir — guest owns that field to avoid clobbering input
     state: nextState,
     updatedAt: Date.now(),
-  };
-  if (ended) payload.status = "ended";
-
-  // Optimistic local render
-  roomData = Object.assign({}, roomData, payload);
+    status: ended ? "ended" : roomData.status,
+  });
   renderState(nextState, roomData);
   updateMpUi();
 
-  writeBusy = true;
-  try {
-    await updateDoc(doc(db, "mp_rooms", roomCode), payload);
-  } catch (err) {
-    console.warn("[mp] host write failed", err);
-    setMpStatus("同步写入失败：" + ((err && err.code) || "错误"), true);
-  } finally {
-    writeBusy = false;
+  // Always queue latest state; flushHostStateWrite coalesces in-flight writes.
+  // Skip redundant hostDir field when unchanged to keep payload lean.
+  const now = Date.now();
+  const dirChanged = lastWrittenHostDir !== localHostDir;
+  const payload = {
+    // Do not write guestDir — guest owns that field
+    state: nextState,
+    updatedAt: now,
+  };
+  if (dirChanged) {
+    payload.hostDir = localHostDir;
+    lastWrittenHostDir = localHostDir;
+  }
+  if (ended) payload.status = "ended";
+  pendingStatePayload = payload;
+  // Tiny throttle only when a write is already flying and match not ending
+  if (ended || !writeBusy || now - lastStateWriteAt >= STATE_WRITE_MIN_MS) {
+    flushHostStateWrite();
   }
 
   if (ended) stopHostLoop();
 }
 
-async function pushDir(dir) {
+async function flushGuestDir(dir) {
+  if (!roomCode || role !== "guest") return;
+  if (guestDirWriteBusy) {
+    pendingGuestDirFlush = dir;
+    return;
+  }
+  guestDirWriteBusy = true;
+  try {
+    // Lightweight input-only write (high priority vs full state)
+    await updateDoc(doc(db, "mp_rooms", roomCode), {
+      guestDir: dir,
+      updatedAt: Date.now(),
+    });
+  } catch (err) {
+    console.warn("[mp] guestDir write failed", err);
+  } finally {
+    guestDirWriteBusy = false;
+    if (pendingGuestDirFlush && pendingGuestDirFlush !== dir) {
+      const next = pendingGuestDirFlush;
+      pendingGuestDirFlush = null;
+      flushGuestDir(next);
+    } else {
+      pendingGuestDirFlush = null;
+    }
+  }
+}
+
+function pushDir(dir) {
   if (!DIRS[dir] || !roomCode || !role) return;
   if (!roomData || roomData.status !== "playing") return;
   if (role === "host") {
     pendingHostDir = dir;
-    // Host dir is applied locally and written with each tick
+    // Host dir applied locally; written lean with ticks
   } else if (role === "guest") {
+    // Reject 180° instantly for prediction feel
+    const cur =
+      (predSnakeG && predSnakeG.length > 1 && localGuestDir) ||
+      (roomData.guestDir) ||
+      "left";
+    if (OPPOSITE[dir] === cur && predSnakeG && predSnakeG.length > 1) return;
     pendingGuestDir = dir;
-    try {
-      await updateDoc(doc(db, "mp_rooms", roomCode), {
-        guestDir: dir,
-        updatedAt: Date.now(),
-      });
-    } catch (err) {
-      console.warn("[mp] guestDir write failed", err);
+    localGuestDir = dir;
+    flushGuestDir(dir);
+  }
+}
+
+function onGuestAuthState(state, room) {
+  if (!state) return;
+  lastAuthTick = state.tick || 0;
+  // Reconcile prediction to authoritative snapshot
+  predSnakeG = cloneSegs(state.snakeG);
+  predFood = state.food ? { x: state.food.x, y: state.food.y } : null;
+  if (room && room.guestDir && DIRS[room.guestDir]) {
+    // Keep local pending if player already turned since snapshot
+    if (!pendingGuestDir || pendingGuestDir === room.guestDir) {
+      localGuestDir = room.guestDir;
+      pendingGuestDir = room.guestDir;
     }
   }
+  startGuestPredict();
+  renderState(state, room, { predictGuest: true });
+}
+
+function startGuestPredict() {
+  if (predTimer) return;
+  predTimer = setInterval(guestPredictTick, MP_TICK_MS);
+}
+
+function guestPredictTick() {
+  if (role !== "guest" || !roomData || roomData.status !== "playing") return;
+  const auth = roomData.state;
+  if (!auth || !auth.aliveG || !predSnakeG || !predSnakeG.length) return;
+
+  const dir = applyDir(localGuestDir || "left", pendingGuestDir, predSnakeG.length);
+  localGuestDir = dir;
+  const d = DIRS[dir];
+  if (!d) return;
+  const head = predSnakeG[0];
+  let nx = head.x + d.x;
+  let ny = head.y + d.y;
+
+  // Soft walls: stop predicting into death; wait for host
+  if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
+
+  const food = predFood || auth.food;
+  const willGrow = food && nx === food.x && ny === food.y;
+
+  // Don't predict through self / host body — freeze until auth
+  for (let i = 0; i < predSnakeG.length - (willGrow ? 0 : 1); i++) {
+    if (predSnakeG[i].x === nx && predSnakeG[i].y === ny) return;
+  }
+  const other = auth.snakeH || [];
+  for (let i = 0; i < other.length; i++) {
+    if (other[i].x === nx && other[i].y === ny) return;
+  }
+
+  const next = cloneSegs(predSnakeG);
+  next.unshift({ x: nx, y: ny });
+  if (!willGrow) next.pop();
+  predSnakeG = next;
+
+  const drawState = {
+    snakeH: auth.snakeH,
+    snakeG: predSnakeG,
+    food: food,
+    scoreH: auth.scoreH,
+    scoreG: auth.scoreG,
+    aliveH: auth.aliveH,
+    aliveG: auth.aliveG,
+    tick: auth.tick,
+    cols: COLS,
+    rows: ROWS,
+  };
+  const drawRoom = Object.assign({}, roomData, { guestDir: dir });
+  renderState(drawState, drawRoom, { predictGuest: true });
 }
 
 
@@ -803,11 +974,8 @@ function drawIdleBoard() {
   drawBoardBg();
 }
 
-function renderState(state, room) {
+function renderState(state, room, opts) {
   if (!ctx || !state) return;
-  if (typeof state.tick === "number" && state.tick === lastRenderedTick && role === "guest") {
-    // still redraw food/snakes — allow same tick re-render from snapshot
-  }
   lastRenderedTick = state.tick || 0;
   drawBoardBg();
 
@@ -826,7 +994,10 @@ function renderState(state, room) {
   }
 
   const hDir = (room && room.hostDir) || "right";
-  const gDir = (room && room.guestDir) || "left";
+  let gDir = (room && room.guestDir) || "left";
+  if (role === "guest" && pendingGuestDir && DIRS[pendingGuestDir]) {
+    gDir = pendingGuestDir;
+  }
 
   // Host cyan
   drawSnake(

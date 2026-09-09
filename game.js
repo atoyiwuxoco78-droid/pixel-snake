@@ -9,15 +9,13 @@
   const COLS = 20;
   const ROWS = 20;
   const CELL = 28; // 20 * 28 = 560
-  const BASE_TICK_MS = 145;
-  const MIN_TICK_MS = 58;
-  const FOODS_PER_SPEED = 4; // speed up every N foods
   const SCORE_PER_LEVEL = 50;
-  const OBSTACLE_START_LEVEL = 2;
   const POWERUP_CHANCE = 0.32; // after eating food
   const POWERUP_DURATION_MS = 5500;
   const STORAGE_KEY = "pixel-snake-leaderboard-v1";
+  const DIFFICULTY_KEY = "pixel-snake-difficulty-v1";
   const MAX_SCORES = 10;
+  const MIN_SNAKE_LEN = 3;
   const DIRS = {
     up: { x: 0, y: -1 },
     down: { x: 0, y: 1 },
@@ -26,6 +24,46 @@
   };
   const OPPOSITE = { up: "down", down: "up", left: "right", right: "left" };
 
+  // Single-player difficulty presets (multiplayer uses fixed medium tick — see multiplayer.js)
+  const DIFFICULTY = {
+    easy: {
+      id: "easy",
+      label: "简单",
+      baseTickMs: 175,
+      minTickMs: 78,
+      foodsPerSpeed: 5,
+      speedStepMs: 7,
+      obstacleStartLevel: 3,
+      obstacleBase: 2,
+      obstaclePerLevel: 1,
+      obstacleCap: 12,
+    },
+    normal: {
+      id: "normal",
+      label: "普通",
+      baseTickMs: 145,
+      minTickMs: 58,
+      foodsPerSpeed: 4,
+      speedStepMs: 9,
+      obstacleStartLevel: 2,
+      obstacleBase: 3,
+      obstaclePerLevel: 2,
+      obstacleCap: 18,
+    },
+    hell: {
+      id: "hell",
+      label: "地狱",
+      baseTickMs: 110,
+      minTickMs: 42,
+      foodsPerSpeed: 3,
+      speedStepMs: 11,
+      obstacleStartLevel: 1,
+      obstacleBase: 4,
+      obstaclePerLevel: 3,
+      obstacleCap: 22,
+    },
+  };
+
   const POWER_TYPES = {
     slow: {
       id: "slow",
@@ -33,6 +71,7 @@
       color: "#4d7cff",
       highlight: "#a8c0ff",
       toastClass: "toast-slow",
+      timed: true,
     },
     phase: {
       id: "phase",
@@ -40,6 +79,33 @@
       color: "#b388ff",
       highlight: "#e0d0ff",
       toastClass: "toast-phase",
+      timed: true,
+    },
+    shrink: {
+      id: "shrink",
+      label: "缩短",
+      color: "#39ff14",
+      highlight: "#b8ff9a",
+      toastClass: "toast-shrink",
+      timed: false,
+      instant: true,
+    },
+    double: {
+      id: "double",
+      label: "双倍分",
+      color: "#ffe566",
+      highlight: "#fff3a8",
+      toastClass: "toast-double",
+      timed: false,
+      foods: 2,
+    },
+    shield: {
+      id: "shield",
+      label: "护盾",
+      color: "#ff9f43",
+      highlight: "#ffd0a0",
+      toastClass: "toast-shield",
+      timed: true,
     },
   };
 
@@ -66,8 +132,11 @@
   const btnSubmitScore = document.getElementById("btnSubmitScore");
   const btnSkipScore = document.getElementById("btnSkipScore");
   const dpad = document.getElementById("dpad");
+  const difficultySelect = document.getElementById("difficultySelect");
 
   // ----- State -----
+  let difficultyId = "normal";
+  let diff = DIFFICULTY.normal;
   let snake = [];
   let dir = "right";
   let nextDir = "right";
@@ -82,13 +151,38 @@
   let paused = false;
   let dead = false;
   let timer = null;
-  let tickMs = BASE_TICK_MS;
+  let tickMs = DIFFICULTY.normal.baseTickMs;
   let pendingScore = 0;
-  let activePower = null; // { type, endsAt }
+  let activePower = null; // { type, endsAt } timed powers
+  let doubleFoodsLeft = 0; // 双倍分: next N foods
+  let shieldCharges = 0; // 护盾: absorb one hit while timed/charged
   let toastTimer = null;
   let powerHudTimer = null;
   let mpMode = false; // when true, single-player yields canvas/input to multiplayer
 
+
+  // ----- Difficulty -----
+  function loadDifficulty() {
+    try {
+      const raw = localStorage.getItem(DIFFICULTY_KEY);
+      if (raw && DIFFICULTY[raw]) return raw;
+    } catch (_) {}
+    return "normal";
+  }
+
+  function applyDifficulty(id, opts) {
+    const next = DIFFICULTY[id] ? id : "normal";
+    difficultyId = next;
+    diff = DIFFICULTY[next];
+    try {
+      localStorage.setItem(DIFFICULTY_KEY, next);
+    } catch (_) {}
+    if (difficultySelect && difficultySelect.value !== next) {
+      difficultySelect.value = next;
+    }
+    // Mid-run: retune timer; obstacles rebuild on next level sync / restart
+    if (opts && opts.restartTimer) restartTimer();
+  }
 
   // ----- Leaderboard -----
   function loadScores() {
@@ -189,16 +283,15 @@
   }
 
   function baseTickForLevel(lv, foods) {
-    // Gradual: level + foods eaten every FOODS_PER_SPEED
-    const speedSteps = Math.floor(foods / FOODS_PER_SPEED) + (lv - 1);
-    const ms = BASE_TICK_MS - speedSteps * 9;
-    return Math.max(MIN_TICK_MS, ms);
+    const speedSteps = Math.floor(foods / diff.foodsPerSpeed) + (lv - 1);
+    const ms = diff.baseTickMs - speedSteps * diff.speedStepMs;
+    return Math.max(diff.minTickMs, ms);
   }
 
   function currentTickMs() {
     let ms = baseTickForLevel(level, foodsEaten);
     if (activePower && activePower.type === "slow") {
-      ms = Math.min(BASE_TICK_MS + 40, Math.floor(ms * 1.65));
+      ms = Math.min(diff.baseTickMs + 40, Math.floor(ms * 1.65));
     }
     return ms;
   }
@@ -222,16 +315,26 @@
   }
 
   function updatePowerHud() {
-    if (!activePower) {
-      powerStatusEl.textContent = "";
-      return;
+    const parts = [];
+    if (activePower) {
+      const left = Math.max(0, Math.ceil((activePower.endsAt - Date.now()) / 1000));
+      const meta = POWER_TYPES[activePower.type];
+      parts.push((meta ? meta.label : "") + " " + left + "s");
     }
-    const left = Math.max(0, Math.ceil((activePower.endsAt - Date.now()) / 1000));
-    const meta = POWER_TYPES[activePower.type];
-    powerStatusEl.textContent = (meta ? meta.label : "") + " " + left + "s";
+    if (doubleFoodsLeft > 0) {
+      parts.push("双倍分×" + doubleFoodsLeft);
+    }
+    if (shieldCharges > 0 && !(activePower && activePower.type === "shield")) {
+      parts.push("护盾");
+    }
+    powerStatusEl.textContent = parts.join(" · ");
   }
 
   function clearActivePower() {
+    if (activePower && activePower.type === "shield") {
+      // timed shield expired without use
+      shieldCharges = 0;
+    }
     activePower = null;
     updatePowerHud();
     if (powerHudTimer) {
@@ -241,26 +344,81 @@
     restartTimer();
   }
 
-  function activatePower(type) {
-    const meta = POWER_TYPES[type];
-    if (!meta) return;
-    activePower = { type: type, endsAt: Date.now() + POWERUP_DURATION_MS };
-    showToast(meta.label + "!", meta.toastClass);
-    updatePowerHud();
+  function startPowerHudTicker() {
     if (powerHudTimer) clearInterval(powerHudTimer);
     powerHudTimer = setInterval(function () {
-      if (!activePower) return;
-      if (Date.now() >= activePower.endsAt) {
+      if (activePower && Date.now() >= activePower.endsAt) {
         clearActivePower();
       } else {
         updatePowerHud();
       }
+      if (!activePower && doubleFoodsLeft <= 0 && shieldCharges <= 0) {
+        clearInterval(powerHudTimer);
+        powerHudTimer = null;
+      }
     }, 200);
+  }
+
+  function shrinkSnake(n) {
+    const drop = Math.min(n, Math.max(0, snake.length - MIN_SNAKE_LEN));
+    for (let i = 0; i < drop; i++) snake.pop();
+    lengthEl.textContent = String(snake.length);
+  }
+
+  function activatePower(type) {
+    const meta = POWER_TYPES[type];
+    if (!meta) return;
+
+    if (type === "shrink") {
+      const n = 2 + Math.floor(Math.random() * 2); // 2 or 3
+      shrinkSnake(n);
+      showToast(meta.label + " -" + n + "!", meta.toastClass);
+      updatePowerHud();
+      return;
+    }
+
+    if (type === "double") {
+      doubleFoodsLeft = meta.foods || 2;
+      showToast(meta.label + "!", meta.toastClass);
+      updatePowerHud();
+      startPowerHudTicker();
+      return;
+    }
+
+    // Timed: slow / phase / shield (replaces previous timed power)
+    if (activePower && activePower.type === "shield" && type !== "shield") {
+      shieldCharges = 0;
+    }
+    activePower = { type: type, endsAt: Date.now() + POWERUP_DURATION_MS };
+    if (type === "shield") {
+      shieldCharges = 1;
+    }
+    showToast(meta.label + "!", meta.toastClass);
+    updatePowerHud();
+    startPowerHudTicker();
     restartTimer();
   }
 
   function isPhasing() {
     return !!(activePower && activePower.type === "phase" && Date.now() < activePower.endsAt);
+  }
+
+  function hasShield() {
+    if (shieldCharges <= 0) return false;
+    if (activePower && activePower.type === "shield") {
+      return Date.now() < activePower.endsAt;
+    }
+    return shieldCharges > 0;
+  }
+
+  function consumeShield() {
+    shieldCharges = 0;
+    if (activePower && activePower.type === "shield") {
+      activePower = null;
+      restartTimer();
+    }
+    showToast("护盾抵挡!", "toast-shield");
+    updatePowerHud();
   }
 
   // ----- Occupancy helpers -----
@@ -296,9 +454,11 @@
   }
 
   function obstacleCountForLevel(lv) {
-    if (lv < OBSTACLE_START_LEVEL) return 0;
-    // Level 2 → 3, then +2 each level, cap at 18
-    return Math.min(18, 3 + (lv - OBSTACLE_START_LEVEL) * 2);
+    if (lv < diff.obstacleStartLevel) return 0;
+    return Math.min(
+      diff.obstacleCap,
+      diff.obstacleBase + (lv - diff.obstacleStartLevel) * diff.obstaclePerLevel
+    );
   }
 
   function rebuildObstacles(targetCount) {
@@ -351,10 +511,16 @@
     score = 0;
     level = 1;
     foodsEaten = 0;
-    tickMs = BASE_TICK_MS;
+    tickMs = diff.baseTickMs;
     obstacles = [];
     powerUp = null;
+    doubleFoodsLeft = 0;
+    shieldCharges = 0;
     clearActivePower();
+    // Hell starts with obstacles at level 1
+    if (diff.obstacleStartLevel <= 1) {
+      rebuildObstacles(obstacleCountForLevel(1));
+    }
     dead = false;
     paused = false;
     placeFood();
@@ -536,15 +702,22 @@
     const prevLevel = level;
     const prevFoods = foodsEaten;
     foodsEaten += 1;
-    score += 10;
+    let pts = 10;
+    if (doubleFoodsLeft > 0) {
+      pts = 20;
+      doubleFoodsLeft -= 1;
+      showToast("+20 双倍!", "toast-double");
+      updatePowerHud();
+    }
+    score += pts;
     placeFood();
     maybeSpawnPowerUp();
     syncLevelAndObstacles(true);
 
     // Speed-up toast when foods hit a step (skip if level toast already shown)
     const crossedSpeedStep =
-      Math.floor(foodsEaten / FOODS_PER_SPEED) >
-      Math.floor(prevFoods / FOODS_PER_SPEED);
+      Math.floor(foodsEaten / diff.foodsPerSpeed) >
+      Math.floor(prevFoods / diff.foodsPerSpeed);
     if (crossedSpeedStep && level === prevLevel) {
       showToast("加速!", "");
     }
@@ -571,11 +744,15 @@
     let ny = head.y + d.y;
     const phasing = isPhasing();
 
-    // Wall collision / wrap when phasing
+    // Wall collision / wrap when phasing / absorb with shield
     if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) {
       if (phasing) {
         nx = ((nx % COLS) + COLS) % COLS;
         ny = ((ny % ROWS) + ROWS) % ROWS;
+      } else if (hasShield()) {
+        consumeShield();
+        draw();
+        return; // skip this move
       } else {
         gameOver();
         draw();
@@ -585,12 +762,22 @@
 
     // Obstacle collision
     if (!phasing) {
+      let hitObs = false;
       for (let i = 0; i < obstacles.length; i++) {
         if (obstacles[i].x === nx && obstacles[i].y === ny) {
-          gameOver();
+          hitObs = true;
+          break;
+        }
+      }
+      if (hitObs) {
+        if (hasShield()) {
+          consumeShield();
           draw();
           return;
         }
+        gameOver();
+        draw();
+        return;
       }
     }
 
@@ -598,7 +785,12 @@
     const willGrow = food && nx === food.x && ny === food.y;
     for (let i = 0; i < snake.length - (willGrow ? 0 : 1); i++) {
       if (snake[i].x === nx && snake[i].y === ny) {
-        // Phase does not save from self-collision (cleaner feel)
+        // Shield can absorb one self-hit; phase does not
+        if (hasShield()) {
+          consumeShield();
+          draw();
+          return;
+        }
         gameOver();
         draw();
         return;
@@ -711,13 +903,21 @@
       // tiny mark
       ctx.fillStyle = "#0a0e17";
       if (powerUp.type === "slow") {
-        // hourglass-ish bars
         ctx.fillRect(px + 10, py + 10, 8, 3);
         ctx.fillRect(px + 10, py + 15, 8, 3);
-      } else {
-        // diamond hint
+      } else if (powerUp.type === "phase") {
         ctx.fillRect(px + 12, py + 9, 4, 10);
         ctx.fillRect(px + 9, py + 12, 10, 4);
+      } else if (powerUp.type === "shrink") {
+        ctx.fillRect(px + 9, py + 13, 10, 3);
+      } else if (powerUp.type === "double") {
+        ctx.fillRect(px + 9, py + 9, 3, 10);
+        ctx.fillRect(px + 14, py + 9, 3, 10);
+      } else if (powerUp.type === "shield") {
+        ctx.fillRect(px + 10, py + 8, 8, 3);
+        ctx.fillRect(px + 10, py + 8, 3, 12);
+        ctx.fillRect(px + 15, py + 8, 3, 12);
+        ctx.fillRect(px + 10, py + 17, 8, 3);
       }
     }
 
@@ -747,9 +947,10 @@
       const isHead = i === 0;
       const t = i / Math.max(snake.length - 1, 1);
 
+      const shielded = hasShield();
       if (isHead) {
-        ctx.fillStyle = phasing ? "#b388ff" : "#00f0ff";
-        ctx.shadowColor = phasing ? "#b388ff" : "#00f0ff";
+        ctx.fillStyle = phasing ? "#b388ff" : shielded ? "#ff9f43" : "#00f0ff";
+        ctx.shadowColor = phasing ? "#b388ff" : shielded ? "#ff9f43" : "#00f0ff";
         ctx.shadowBlur = 10;
       } else {
         if (phasing) {
@@ -758,6 +959,12 @@
         } else if (activePower && activePower.type === "slow") {
           const g = Math.floor(60 + (1 - t) * 140);
           ctx.fillStyle = "rgb(40," + Math.floor(g * 0.6) + "," + Math.min(255, g + 80) + ")";
+        } else if (shielded) {
+          const g = Math.floor(80 + (1 - t) * 140);
+          ctx.fillStyle = "rgb(" + Math.min(255, g + 60) + "," + Math.floor(g * 0.55) + ",40)";
+        } else if (doubleFoodsLeft > 0) {
+          const g = Math.floor(80 + (1 - t) * 140);
+          ctx.fillStyle = "rgb(" + Math.min(255, g + 40) + "," + g + ",40)";
         } else {
           const g = Math.floor(40 + (1 - t) * 180);
           ctx.fillStyle = "rgb(0," + g + "," + Math.min(255, g + 40) + ")";
@@ -914,6 +1121,22 @@
   // ----- Init -----
   canvas.width = COLS * CELL;
   canvas.height = ROWS * CELL;
+  applyDifficulty(loadDifficulty());
+  if (difficultySelect) {
+    difficultySelect.value = difficultyId;
+    difficultySelect.addEventListener("change", function () {
+      const next = difficultySelect.value;
+      const wasRunning = running && !paused && !dead;
+      applyDifficulty(next, { restartTimer: wasRunning });
+      if (!running || dead) {
+        // Preview obstacle density on idle board for hell/easy
+        resetGame();
+        showOverlay("准备好了吗？", "难度：" + diff.label + " · 按「开始游戏」或空格键");
+      } else {
+        showToast("难度：" + diff.label, "");
+      }
+    });
+  }
   renderLeaderboard();
   updateHighScoreDisplay();
   resetGame();
@@ -955,6 +1178,9 @@
     exitMultiplayer: exitMultiplayer,
     isMultiplayerMode: function () {
       return mpMode;
+    },
+    getDifficulty: function () {
+      return difficultyId;
     },
   };
 
