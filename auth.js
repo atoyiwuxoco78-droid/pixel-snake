@@ -202,6 +202,8 @@ async function saveBestScore(pts) {
   const name = displayNameFor(user);
   const ref = doc(db, "scores", user.uid);
   try {
+    // Ensure Auth token is attached to Firestore requests
+    await user.getIdToken(true);
     const snap = await getDoc(ref);
     if (snap.exists()) {
       const prev = snap.data().score;
