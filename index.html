@@ -26,6 +26,10 @@
           <div class="stat-value neon-cyan" id="score">0</div>
         </div>
         <div class="stat-box">
+          <div class="stat-label">关卡</div>
+          <div class="stat-value neon-yellow" id="level">1</div>
+        </div>
+        <div class="stat-box">
           <div class="stat-label">最高分</div>
           <div class="stat-value neon-magenta" id="highScore">0</div>
         </div>
@@ -33,9 +37,14 @@
           <div class="stat-label">长度</div>
           <div class="stat-value" id="length">3</div>
         </div>
+        <div class="power-status" id="powerStatus" aria-live="polite"></div>
         <div class="controls-hint">
           <p>方向键 / WASD</p>
           <p>空格 · 暂停</p>
+          <p class="hint-legend">
+            <span class="leg-slow">■</span>减速
+            <span class="leg-phase">■</span>穿墙
+          </p>
         </div>
         <div class="btn-stack">
           <button type="button" class="btn btn-primary" id="btnStart">开始游戏</button>
@@ -47,6 +56,7 @@
       <section class="game-area">
         <div class="canvas-wrap">
           <canvas id="game" width="560" height="560" aria-label="贪吃蛇游戏画布"></canvas>
+          <div class="toast hidden" id="toast" aria-live="polite"></div>
           <div class="overlay" id="overlay">
             <div class="overlay-content" id="overlayContent">
               <p class="overlay-title" id="overlayTitle">准备好了吗？</p>
