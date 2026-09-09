@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./style.css?v=12" />
+  <link rel="stylesheet" href="./style.css?v=13" />
 </head>
 <body>
   <div class="scanlines" aria-hidden="true"></div>
@@ -242,19 +242,19 @@
     </div>
   </div>
 
-  <script src="./game.js?v=12"></script>
-  <script type="module" src="./auth.js?v=12"></script>
-  <script type="module" src="./multiplayer.js?v=12"></script>
+  <script src="./game.js?v=13"></script>
+  <script type="module" src="./auth.js?v=13"></script>
+  <script type="module" src="./multiplayer.js?v=13"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=12").then((reg) => {
+        navigator.serviceWorker.register("./sw.js?v=13").then((reg) => {
           reg.update();
         }).catch(() => {});
         // One-time: drop ancient caches if a controller is stuck
         caches.keys().then((keys) => {
           keys.forEach((k) => {
-            if (k !== "pixel-snake-v12") caches.delete(k);
+            if (k !== "pixel-snake-v13") caches.delete(k);
           });
         }).catch(() => {});
       });

@@ -19,7 +19,6 @@ import {
   setDoc,
   collection,
   query,
-  where,
   orderBy,
   limit,
   getDocs,
@@ -217,13 +216,10 @@ async function saveBestScore(pts, difficultyId) {
     return { saved: false, reason: "not-logged-in" };
   }
   const difficulty = resolveDifficulty(difficultyId);
-  // JS SDK stores numbers as doubles — rules accept whole numbers; floor for safety
   const score = Math.floor(pts);
   const name = displayNameFor(user);
-  const docId = user.uid + "_" + difficulty;
-  const ref = doc(db, "scores", docId);
+  const ref = doc(db, "boards", difficulty, "entries", user.uid);
   try {
-    // Ensure Auth token is attached to Firestore requests
     await user.getIdToken(true);
     const snap = await getDoc(ref);
     let previous = null;
@@ -232,26 +228,47 @@ async function saveBestScore(pts, difficultyId) {
       if (typeof previous === "number" && score < previous) {
         return { saved: false, reason: "lower", previous: previous, difficulty: difficulty };
       }
-    } else if (difficulty === "normal") {
-      // One-time: seed from legacy scores/{uid} into normal board if higher
+    } else {
+      // migrate best from legacy scores/{uid_diff} or scores/{uid}
       try {
-        const legacy = await getDoc(doc(db, "scores", user.uid));
-        if (legacy.exists()) {
-          const legScore = legacy.data().score;
-          if (typeof legScore === "number" && score < legScore) {
+        const legacyDiff = await getDoc(doc(db, "scores", user.uid + "_" + difficulty));
+        if (legacyDiff.exists()) {
+          const leg = legacyDiff.data().score;
+          if (typeof leg === "number" && score < leg) {
+            previous = leg;
             await setDoc(
               ref,
               {
-                score: Math.floor(legScore),
+                score: Math.floor(leg),
                 displayName: name,
                 updatedAt: Date.now(),
                 uid: user.uid,
-                difficulty: "normal",
+                difficulty: difficulty,
               },
               { merge: true }
             );
             await loadCloudLeaderboard(difficulty);
-            return { saved: false, reason: "lower", previous: legScore, difficulty: difficulty };
+            return { saved: false, reason: "lower", previous: leg, difficulty: difficulty };
+          }
+        } else if (difficulty === "normal") {
+          const legacy = await getDoc(doc(db, "scores", user.uid));
+          if (legacy.exists()) {
+            const leg = legacy.data().score;
+            if (typeof leg === "number" && score < leg) {
+              await setDoc(
+                ref,
+                {
+                  score: Math.floor(leg),
+                  displayName: name,
+                  updatedAt: Date.now(),
+                  uid: user.uid,
+                  difficulty: "normal",
+                },
+                { merge: true }
+              );
+              await loadCloudLeaderboard(difficulty);
+              return { saved: false, reason: "lower", previous: leg, difficulty: difficulty };
+            }
           }
         }
       } catch (_) {}
@@ -267,6 +284,20 @@ async function saveBestScore(pts, difficultyId) {
       },
       { merge: true }
     );
+    // also mirror to legacy path for safety
+    try {
+      await setDoc(
+        doc(db, "scores", user.uid + "_" + difficulty),
+        {
+          score: score,
+          displayName: name,
+          updatedAt: Date.now(),
+          uid: user.uid,
+          difficulty: difficulty,
+        },
+        { merge: true }
+      );
+    } catch (_) {}
     await loadCloudLeaderboard(difficulty);
     return { saved: true, score: score, difficulty: difficulty };
   } catch (err) {
@@ -308,15 +339,15 @@ async function loadCloudLeaderboard(difficultyId) {
   const difficulty = resolveDifficulty(difficultyId);
   syncCloudBoardTitle(difficulty);
   el.innerHTML = '<li class="empty">加载中…</li>';
+  const label = DIFF_LABELS[difficulty] || "普通";
   try {
+    // boards/{diff}/entries — only orderBy(score), no composite index needed
     const q = query(
-      collection(db, "scores"),
-      where("difficulty", "==", difficulty),
+      collection(db, "boards", difficulty, "entries"),
       orderBy("score", "desc"),
       limit(10)
     );
     const snap = await getDocs(q);
-    const label = DIFF_LABELS[difficulty] || "普通";
     if (snap.empty) {
       el.innerHTML =
         '<li class="empty">暂无「' + label + '」云端成绩<br/>登录后上传吧！</li>';
@@ -350,7 +381,7 @@ async function loadCloudLeaderboard(difficultyId) {
     const code = err && err.code;
     let msg = "云端排行榜加载失败<br/>请检查网络";
     if (code === "failed-precondition") {
-      msg = "云端排行榜暂不可用<br/>（索引构建中）";
+      msg = "云端排行榜加载失败<br/>请硬刷新后再试";
     } else if (code === "permission-denied") {
       msg = "云端排行榜无权限<br/>请稍后重试";
     }
