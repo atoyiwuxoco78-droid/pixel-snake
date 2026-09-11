@@ -1,5 +1,5 @@
 /* Pixel Snake — network-first shell so updates show up */
-const CACHE_NAME = 'pixel-snake-v14';
+const CACHE_NAME = 'pixel-snake-v15';
 const SHELL = [
   './',
   './index.html',

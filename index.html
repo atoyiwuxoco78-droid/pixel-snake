@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./style.css?v=14" />
+  <link rel="stylesheet" href="./style.css?v=15" />
 </head>
 <body>
   <div class="scanlines" aria-hidden="true"></div>
@@ -207,7 +207,7 @@
     </main>
 
     <footer class="footer">
-      <span class="build-version" id="buildVersion">版本 v14 · 护盾无敌</span><span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
+      <span class="build-version" id="buildVersion">版本 v15 · 双人地图</span><span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
     </footer>
   </div>
 
@@ -242,19 +242,19 @@
     </div>
   </div>
 
-  <script src="./game.js?v=14"></script>
-  <script type="module" src="./auth.js?v=14"></script>
-  <script type="module" src="./multiplayer.js?v=14"></script>
+  <script src="./game.js?v=15"></script>
+  <script type="module" src="./auth.js?v=15"></script>
+  <script type="module" src="./multiplayer.js?v=15"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=14").then((reg) => {
+        navigator.serviceWorker.register("./sw.js?v=15").then((reg) => {
           reg.update();
         }).catch(() => {});
         // One-time: drop ancient caches if a controller is stuck
         caches.keys().then((keys) => {
           keys.forEach((k) => {
-            if (k !== "pixel-snake-v14") caches.delete(k);
+            if (k !== "pixel-snake-v15") caches.delete(k);
           });
         }).catch(() => {});
       });

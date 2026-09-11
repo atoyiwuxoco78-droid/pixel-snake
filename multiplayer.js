@@ -1,3 +1,14 @@
+
+function ensureCanvasSize() {
+  if (!canvas) return;
+  const w = COLS * CELL;
+  const h = ROWS * CELL;
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+}
+
 /**
  * Pixel Snake — 2-player same-room multiplayer (Firestore host-authoritative)
  * Zero-build ES module. Relative paths for GitHub Pages /pixel-snake/
@@ -33,9 +44,10 @@ const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-const COLS = 20;
-const ROWS = 20;
-const CELL = 28;
+const COLS = 28;
+const ROWS = 28;
+const CELL = 20; // 28*20 = 560, same canvas pixel size, bigger playfield
+const SPAWN_GRACE_TICKS = 45; // ~few seconds: no PvP collision at start
 const MP_TICK_MS = 85; // fixed medium tick for fairness (not SP difficulty)
 const ROOM_TTL_MS = 30 * 60 * 1000;
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -263,16 +275,18 @@ function replaceFoodAt(foods, index, snakeH, snakeG, headDir) {
 }
 
 function initialState() {
-  const midY = Math.floor(ROWS / 2);
+  // Opposite corners / lanes so they do not head-on collide instantly
+  const yH = Math.floor(ROWS * 0.28);
+  const yG = Math.floor(ROWS * 0.72);
   const snakeH = [
-    { x: 4, y: midY },
-    { x: 3, y: midY },
-    { x: 2, y: midY },
+    { x: 3, y: yH },
+    { x: 2, y: yH },
+    { x: 1, y: yH },
   ];
   const snakeG = [
-    { x: COLS - 5, y: midY },
-    { x: COLS - 4, y: midY },
-    { x: COLS - 3, y: midY },
+    { x: COLS - 4, y: yG },
+    { x: COLS - 3, y: yG },
+    { x: COLS - 2, y: yG },
   ];
   const headDir = { host: "right", guest: "left" };
   const foods = normalizeFoods(null, snakeH, snakeG, headDir);
@@ -286,6 +300,7 @@ function initialState() {
     aliveH: true,
     aliveG: true,
     tick: 0,
+    graceLeft: SPAWN_GRACE_TICKS,
     cols: COLS,
     rows: ROWS,
   };
@@ -746,10 +761,11 @@ function applyDir(current, pending, len) {
   return pending;
 }
 
-function moveSnake(snake, dir, foods, otherSnake) {
+function moveSnake(snake, dir, foods, otherSnake, opts) {
   if (!snake || !snake.length) {
     return { snake: snake, dir: dir, grew: false, dead: true, eatIndex: -1 };
   }
+  const ignoreOther = !!(opts && opts.ignoreOther);
   const d = DIRS[dir];
   const head = snake[0];
   const nx = head.x + d.x;
@@ -768,10 +784,12 @@ function moveSnake(snake, dir, foods, otherSnake) {
       return { snake: snake, dir: dir, grew: false, dead: true, eatIndex: -1 };
     }
   }
-  // Other snake collision
-  for (let i = 0; i < (otherSnake || []).length; i++) {
-    if (otherSnake[i].x === nx && otherSnake[i].y === ny) {
-      return { snake: snake, dir: dir, grew: false, dead: true, eatIndex: -1 };
+  // Other snake collision (skipped during spawn grace)
+  if (!ignoreOther) {
+    for (let i = 0; i < (otherSnake || []).length; i++) {
+      if (otherSnake[i].x === nx && otherSnake[i].y === ny) {
+        return { snake: snake, dir: dir, grew: false, dead: true, eatIndex: -1 };
+      }
     }
   }
 
@@ -836,12 +854,14 @@ async function hostTick() {
   let snakeG = cloneSegs(prev.snakeG);
   const headDir = { host: localHostDir, guest: guestDir };
   let foods = normalizeFoods(prev, snakeH, snakeG, headDir);
+  let graceLeft = typeof prev.graceLeft === "number" ? prev.graceLeft : 0;
+  const ignoreOther = graceLeft > 0;
   let scoreH = prev.scoreH || 0;
   let scoreG = prev.scoreG || 0;
   let aliveH = true;
   let aliveG = true;
 
-  const mh = moveSnake(snakeH, localHostDir, foods, snakeG);
+  const mh = moveSnake(snakeH, localHostDir, foods, snakeG, { ignoreOther: ignoreOther });
   if (mh.dead) {
     aliveH = false;
   } else {
@@ -853,7 +873,7 @@ async function hostTick() {
   }
 
   // Guest moves against updated host (or original if host died mid-tick — still check)
-  const mg = moveSnake(snakeG, guestDir, foods, snakeH);
+  const mg = moveSnake(snakeG, guestDir, foods, snakeH, { ignoreOther: ignoreOther });
   if (mg.dead) {
     aliveG = false;
   } else {
@@ -865,7 +885,7 @@ async function hostTick() {
   }
 
   // Head-on same cell: both die
-  if (aliveH && aliveG && snakeH[0] && snakeG[0]) {
+  if (!ignoreOther && aliveH && aliveG && snakeH[0] && snakeG[0]) {
     if (snakeH[0].x === snakeG[0].x && snakeH[0].y === snakeG[0].y) {
       aliveH = false;
       aliveG = false;
@@ -883,6 +903,7 @@ async function hostTick() {
     aliveH: aliveH,
     aliveG: aliveG,
     tick: tick,
+    graceLeft: Math.max(0, graceLeft - 1),
     cols: COLS,
     rows: ROWS,
   };
