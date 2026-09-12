@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./style.css?v=23" />
+  <link rel="stylesheet" href="./style.css?v=24" />
 </head>
 <body>
   <div class="scanlines" aria-hidden="true"></div>
@@ -32,7 +32,7 @@
         <div class="hub-actions">
           <button type="button" class="btn btn-primary btn-cta" id="hubPlay">开始冒险</button>
           <button type="button" class="btn btn-secondary" id="hubMp">双人对战</button>
-          <button type="button" class="btn btn-secondary" id="hubOpenStory">短篇剧情</button>
+          <button type="button" class="btn btn-secondary" id="hubOpenStory">剧情选关</button>
           <button type="button" class="btn btn-secondary" id="hubOpenAchievements">成就</button>
           <button type="button" class="btn btn-secondary" id="hubOpenSkins">皮肤</button>
           <button type="button" class="btn btn-secondary" id="hubOpenSeason">本周赛季</button>
@@ -58,14 +58,18 @@
 
       <div id="hubStory" class="hub-panel hidden" hidden>
         <div class="hub-panel-head">
-          <h2 class="hub-panel-title neon-yellow">短篇剧情</h2>
+          <h2 class="hub-panel-title neon-yellow">剧情选关</h2>
           <button type="button" class="btn btn-secondary btn-xs" data-hub-back>返回</button>
         </div>
         <ul class="hub-list" id="hubStoryList"></ul>
         <div id="hubStoryReader" class="hub-story-reader hidden" hidden>
           <h3 class="hub-story-reader-title" id="hubStoryReaderTitle"></h3>
           <p class="hub-story-reader-body" id="hubStoryReaderBody"></p>
-          <button type="button" class="btn btn-secondary btn-sm" id="hubStoryReaderClose">收起</button>
+          <p class="hub-story-goal" id="hubStoryGoal"></p>
+          <div class="hub-story-actions">
+            <button type="button" class="btn btn-primary btn-sm" id="hubStoryPlay">开始本章</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="hubStoryReaderClose">收起</button>
+          </div>
         </div>
       </div>
     </div>
@@ -123,6 +127,7 @@
           </div>
         </div>
         <div class="power-status" id="powerStatus" aria-live="polite"></div>
+        <div class="campaign-hud hidden" id="campaignHud" hidden aria-live="polite"></div>
 
         <div id="spControls">
           <div class="difficulty-card" id="difficultyCard" data-diff="normal">
@@ -291,7 +296,7 @@
     </main>
 
     <footer class="footer">
-      <span class="build-version" id="buildVersion">版本 v23 · 赛季写入修复</span><span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
+      <span class="build-version" id="buildVersion">版本 v24 · 剧情选关</span><span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
     </footer>
   </div>
 
@@ -341,20 +346,20 @@
     </div>
   </div>
 
-  <script src="./product.js?v=23"></script>
-  <script src="./game.js?v=23"></script>
-  <script type="module" src="./auth.js?v=23"></script>
-  <script type="module" src="./multiplayer.js?v=23"></script>
+  <script src="./product.js?v=24"></script>
+  <script src="./game.js?v=24"></script>
+  <script type="module" src="./auth.js?v=24"></script>
+  <script type="module" src="./multiplayer.js?v=24"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=23").then((reg) => {
+        navigator.serviceWorker.register("./sw.js?v=24").then((reg) => {
           reg.update();
         }).catch(() => {});
         // One-time: drop ancient caches if a controller is stuck
         caches.keys().then((keys) => {
           keys.forEach((k) => {
-            if (k !== "pixel-snake-v23") caches.delete(k);
+            if (k !== "pixel-snake-v24") caches.delete(k);
           });
         }).catch(() => {});
       });

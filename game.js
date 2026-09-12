@@ -241,6 +241,8 @@
   let toastTimer = null;
   let powerHudTimer = null;
   let mpMode = false; // when true, single-player yields canvas/input to multiplayer
+  let campaign = null; // { id, title, goal, goalText, difficulty } or null
+  let campaignWon = false;
 
 
   // ----- Difficulty -----
@@ -1236,6 +1238,7 @@
     lengthEl.textContent = String(snake.length);
     if (livesEl) livesEl.textContent = String(lives);
     highScoreEl.textContent = String(Math.max(highScore, score));
+    updateCampaignHud();
   }
 
   function showOverlay(title, msg) {
@@ -1437,6 +1440,7 @@
       restartTimer();
     }
     draw();
+    checkCampaignWin();
   }
 
   /** Spend a life to survive a fatal hit; otherwise game over. */
@@ -1453,12 +1457,101 @@
     return false;
   }
 
+
+  function clearCampaign() {
+    campaign = null;
+    campaignWon = false;
+    updateCampaignHud();
+  }
+
+  function updateCampaignHud() {
+    var el = document.getElementById("campaignHud");
+    if (!el) return;
+    if (!campaign) {
+      el.textContent = "";
+      el.classList.add("hidden");
+      el.setAttribute("hidden", "");
+      return;
+    }
+    el.removeAttribute("hidden");
+    el.classList.remove("hidden");
+    var prog = "";
+    if (campaign.goal) {
+      if (campaign.goal.type === "score") {
+        prog = "进度 " + score + " / " + campaign.goal.value;
+      } else if (campaign.goal.type === "level") {
+        prog = "进度 关卡 " + level + " / " + campaign.goal.value;
+      } else if (campaign.goal.type === "foods") {
+        prog = "进度 " + foodsEaten + " / " + campaign.goal.value;
+      }
+    }
+    el.innerHTML =
+      '<div class="campaign-title">' +
+      escapeHtml(campaign.title || "剧情关") +
+      "</div>" +
+      '<div class="campaign-goal">' +
+      escapeHtml(campaign.goalText || "") +
+      (prog ? " · " + escapeHtml(prog) : "") +
+      "</div>";
+  }
+
+  function campaignGoalMet() {
+    if (!campaign || !campaign.goal || campaignWon) return false;
+    var g = campaign.goal;
+    if (g.type === "score") return score >= g.value;
+    if (g.type === "level") return level >= g.value;
+    if (g.type === "foods") return foodsEaten >= g.value;
+    return false;
+  }
+
+  function checkCampaignWin() {
+    if (!campaign || campaignWon || mpMode) return;
+    if (!campaignGoalMet()) {
+      updateCampaignHud();
+      return;
+    }
+    campaignWon = true;
+    clearInterval(timer);
+    timer = null;
+    running = false;
+    paused = false;
+    dead = false;
+    if (powerHudTimer) {
+      clearInterval(powerHudTimer);
+      powerHudTimer = null;
+    }
+    var id = campaign.id;
+    var title = campaign.title || "章节";
+    var m = metaApi();
+    if (m && m.markChapterCleared) m.markChapterCleared(id);
+    // still record score
+    pendingScore = score;
+    var loggedIn = !!(fb() && fb().isLoggedIn && fb().isLoggedIn());
+    var name = preferNickname();
+    addScore(name, pendingScore);
+    if (loggedIn) {
+      syncCloudScore(pendingScore);
+    }
+    btnStart.disabled = false;
+    btnPause.disabled = true;
+    btnPause.textContent = "暂停";
+    setModalHidden(scoreModal, true);
+    showOverlay(
+      "章节通关!",
+      title + " · 得分 " + score + " · 可回大厅开下一章"
+    );
+    showToast("通关!", "toast-ok");
+    updateCampaignHud();
+    draw();
+  }
+
   function gameOver() {
     dead = true;
     running = false;
     paused = false;
     var mg = metaApi();
     if (mg && mg.onGameOver) mg.onGameOver(score, level);
+    var failedCampaign = campaign && !campaignWon ? campaign : null;
     clearInterval(timer);
     timer = null;
     if (powerHudTimer) {
@@ -1481,7 +1574,13 @@
       setModalHidden(scoreModal, true);
       var name = preferNickname();
       addScore(name, pendingScore);
-      showOverlay("游戏结束", "得分 " + score + " · 正在同步云端…");
+      showOverlay(
+        failedCampaign ? "挑战失败" : "游戏结束",
+        (failedCampaign ? failedCampaign.title + " · " : "") +
+          "得分 " +
+          score +
+          " · 正在同步云端…"
+      );
       syncCloudScore(pendingScore).then(function (res) {
         if (res && res.saved) {
           showOverlay("成绩已保存", "本地 + 云端已更新 · 「重新开始」再来一局");
@@ -1503,7 +1602,14 @@
     }
 
     // Guests: nickname modal only
-    showOverlay("游戏结束", "得分 " + score + " · 关卡 " + level);
+    showOverlay(
+      failedCampaign ? "挑战失败" : "游戏结束",
+      (failedCampaign ? failedCampaign.title + " · " : "") +
+        "得分 " +
+        score +
+        " · 关卡 " +
+        level
+    );
     setModalHidden(scoreModal, false);
     setTimeout(function () {
       nicknameInput.focus();
@@ -1551,6 +1657,7 @@
     var m = metaApi();
     if (m && m.onFoodEaten) m.onFoodEaten(score, foodsEaten, level);
     if (m && m.onScore) m.onScore(score);
+    checkCampaignWin();
   }
 
   function tick() {
@@ -2163,6 +2270,7 @@
   }
 
   function returnToHub() {
+    clearCampaign();
     clearInterval(timer);
     timer = null;
     running = false;
@@ -2184,7 +2292,57 @@
     showOverlay("主菜单", "从大厅继续冒险");
   }
 
+
+  function startCampaign(cfg) {
+    if (!cfg || !cfg.id) return;
+    mpMode = false;
+    campaign = {
+      id: cfg.id,
+      title: cfg.title || "剧情关",
+      body: cfg.body || "",
+      goal: cfg.goal || { type: "score", value: 40 },
+      goalText: cfg.goalText || "",
+      difficulty: cfg.difficulty || "normal",
+    };
+    campaignWon = false;
+    // apply chapter difficulty
+    if (DIFFICULTY[campaign.difficulty]) {
+      difficultyId = campaign.difficulty;
+      diff = DIFFICULTY[difficultyId];
+      try {
+        localStorage.setItem(DIFFICULTY_KEY, difficultyId);
+      } catch (_) {}
+      // sync difficulty UI if helpers exist
+      var card = document.getElementById("difficultyCard");
+      if (card) card.setAttribute("data-diff", difficultyId);
+      var cur = document.getElementById("difficultyCurrent");
+      if (cur) cur.textContent = "当前：" + (DIFF_LABELS[difficultyId] || difficultyId);
+      document.querySelectorAll("#difficultyTabs .diff-tab[data-diff]").forEach(function (btn) {
+        var on = btn.getAttribute("data-diff") === difficultyId;
+        btn.classList.toggle("active", on);
+        btn.setAttribute("aria-checked", on ? "true" : "false");
+      });
+      setBoardDifficulty(difficultyId, { force: true });
+    }
+    dead = false;
+    paused = false;
+    running = false;
+    resetGame();
+    updateCampaignHud();
+    btnStart.disabled = false;
+    btnPause.disabled = true;
+    btnPause.textContent = "暂停";
+    showOverlay(
+      campaign.title,
+      (campaign.goalText ? "目标：" + campaign.goalText + " · " : "") + "按「开始游戏」或空格开打"
+    );
+    draw();
+    // auto-start for smoother chapter flow
+    startGame();
+  }
+
   function prepareFromHub() {
+    clearCampaign();
     mpMode = false;
     dead = false;
     paused = false;
@@ -2212,6 +2370,8 @@
     setBoardDifficulty: setBoardDifficulty,
     returnToHub: returnToHub,
     prepareFromHub: prepareFromHub,
+    startCampaign: startCampaign,
+    clearCampaign: clearCampaign,
     redraw: function () {
       draw();
     },

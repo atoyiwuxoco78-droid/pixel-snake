@@ -83,28 +83,44 @@
     {
       id: "ch1",
       title: "第一章 · 霓虹果园",
-      unlock: null,
+      unlockAch: null,
+      requiresClear: null,
+      difficulty: "easy",
+      goal: { type: "score", value: 40 },
+      goalText: "得分达到 40",
       body:
         "传说城市地下有一座永不熄灯的果园。苹果会自己发光，蛇则靠吞噬光亮活下去。你不是第一条进去的蛇——只是还没死掉的那条。",
     },
     {
       id: "ch2",
       title: "第二章 · 契约贩子",
-      unlock: "score_50",
+      unlockAch: "score_50",
+      requiresClear: "ch1",
+      difficulty: "normal",
+      goal: { type: "score", value: 80 },
+      goalText: "得分达到 80",
       body:
         "果园深处漂着紫色的「恶魔果实」。它不给人力量，只做买卖：用你的分数换一条命。账可以赊，利息写在皮肤上——分数会变成红色。",
     },
     {
       id: "ch3",
       title: "第三章 · 压力层",
-      unlock: "level_3",
+      unlockAch: "level_3",
+      requiresClear: "ch2",
+      difficulty: "normal",
+      goal: { type: "level", value: 3 },
+      goalText: "到达第 3 关",
       body:
         "关卡越高，铁刺障碍越密。有人说那是果园的免疫系统。也有人说，那只是上一条蛇留下的骨头。",
     },
     {
       id: "ch4",
       title: "第四章 · 猎手徽章",
-      unlock: "score_200",
+      unlockAch: "score_200",
+      requiresClear: "ch3",
+      difficulty: "hell",
+      goal: { type: "score", value: 150 },
+      goalText: "得分达到 150（地狱）",
       body:
         "当你的光亮攒到足够刺眼，果园会记住你的颜色。金牌蛇不是称号——是通行证。至于出口在哪，还没蛇回来说过。",
     },
@@ -113,14 +129,15 @@
   function loadMeta() {
     try {
       var raw = localStorage.getItem(META_KEY);
-      if (!raw) return { unlocked: {}, seenStory: {} };
+      if (!raw) return { unlocked: {}, seenStory: {}, chaptersCleared: {} };
       var data = JSON.parse(raw);
       return {
         unlocked: data.unlocked || {},
         seenStory: data.seenStory || {},
+        chaptersCleared: data.chaptersCleared || {},
       };
     } catch (e) {
-      return { unlocked: {}, seenStory: {} };
+      return { unlocked: {}, seenStory: {}, chaptersCleared: {} };
     }
   }
 
@@ -128,7 +145,11 @@
     try {
       localStorage.setItem(
         META_KEY,
-        JSON.stringify({ unlocked: meta.unlocked, seenStory: meta.seenStory })
+        JSON.stringify({
+          unlocked: meta.unlocked,
+          seenStory: meta.seenStory,
+          chaptersCleared: meta.chaptersCleared,
+        })
       );
     } catch (e) {}
   }
@@ -287,23 +308,74 @@
     list.innerHTML = html;
   }
 
+  function chapterCleared(id) {
+    return !!(meta.chaptersCleared && meta.chaptersCleared[id]);
+  }
+
+  function chapterPlayable(c) {
+    if (!c) return false;
+    // First chapter always open; later chapters: clear previous OR matching achievement
+    if (!c.requiresClear) return true;
+    if (chapterCleared(c.requiresClear)) return true;
+    if (c.unlockAch && isUnlocked(c.unlockAch)) return true;
+    return false;
+  }
+
+  function getChapter(id) {
+    for (var i = 0; i < STORY.length; i++) {
+      if (STORY[i].id === id) return STORY[i];
+    }
+    return null;
+  }
+
+  function markChapterCleared(id) {
+    if (!id) return;
+    if (!meta.chaptersCleared) meta.chaptersCleared = {};
+    if (meta.chaptersCleared[id]) {
+      saveMeta();
+      renderStory();
+      return;
+    }
+    meta.chaptersCleared[id] = Date.now();
+    saveMeta();
+    var el = $("toast");
+    if (el) {
+      el.textContent = "章节通关 · " + ((getChapter(id) && getChapter(id).title) || id);
+      el.className = "toast toast-ok";
+      void el.offsetWidth;
+      setTimeout(function () {
+        el.classList.add("hidden");
+      }, 1600);
+    }
+    renderStory();
+  }
+
   function renderStory() {
     var list = $("hubStoryList");
     if (!list) return;
     var html = "";
     for (var i = 0; i < STORY.length; i++) {
       var c = STORY[i];
-      var on = !c.unlock || isUnlocked(c.unlock);
+      var on = chapterPlayable(c);
+      var cleared = chapterCleared(c.id);
+      var status = !on ? "锁定" : cleared ? "已通关" : "可挑战";
+      var desc = !on
+        ? c.requiresClear
+          ? "先通关上一章，或解锁对应成就"
+          : "未解锁"
+        : "目标：" + c.goalText + " · 点击查看 / 开打";
       html +=
         '<li class="hub-item hub-story' +
         (on ? " is-on" : "") +
+        (cleared ? " is-cleared" : "") +
         '" data-story="' +
         c.id +
         '"><div><div class="hub-item-title">' +
         c.title +
-        (on ? "" : " · 锁定") +
+        " · " +
+        status +
         '</div><div class="hub-item-desc">' +
-        (on ? "点击阅读" : "继续游玩以解锁") +
+        desc +
         "</div></div></li>";
     }
     list.innerHTML = html;
@@ -311,20 +383,47 @@
   }
 
   function readStory(id) {
-    var c = null;
-    for (var i = 0; i < STORY.length; i++) {
-      if (STORY[i].id === id) c = STORY[i];
-    }
+    var c = getChapter(id);
     if (!c) return;
-    if (c.unlock && !isUnlocked(c.unlock)) return;
+    if (!chapterPlayable(c)) return;
     meta.seenStory[c.id] = true;
     saveMeta();
     var reader = $("hubStoryReader");
     var title = $("hubStoryReaderTitle");
     var body = $("hubStoryReaderBody");
+    var goalEl = $("hubStoryGoal");
+    var playBtn = $("hubStoryPlay");
     if (title) title.textContent = c.title;
     if (body) body.textContent = c.body;
+    if (goalEl) {
+      goalEl.textContent =
+        "过关目标：" +
+        c.goalText +
+        " · 推荐难度：" +
+        ({ easy: "简单", normal: "普通", hell: "地狱" }[c.difficulty] || c.difficulty) +
+        (chapterCleared(c.id) ? " · 已通关（可再打）" : "");
+    }
+    if (playBtn) playBtn.setAttribute("data-play-chapter", c.id);
     setHidden(reader, false);
+  }
+
+  function startChapter(id) {
+    var c = getChapter(id);
+    if (!c || !chapterPlayable(c)) return;
+    hideHub();
+    var tab = $("tabModeSingle");
+    if (tab) tab.click();
+    var g = window.PixelSnakeGame;
+    if (g && g.startCampaign) {
+      g.startCampaign({
+        id: c.id,
+        title: c.title,
+        body: c.body,
+        goal: c.goal,
+        goalText: c.goalText,
+        difficulty: c.difficulty,
+      });
+    }
   }
 
   function selectSkin(id) {
@@ -445,6 +544,13 @@
         setHidden($("hubStoryReader"), true);
       });
     }
+    var storyPlay = $("hubStoryPlay");
+    if (storyPlay) {
+      storyPlay.addEventListener("click", function () {
+        var id = storyPlay.getAttribute("data-play-chapter");
+        if (id) startChapter(id);
+      });
+    }
   }
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -474,5 +580,7 @@
     showHub: showHub,
     hideHub: hideHub,
     isHubOpen: isHubOpen,
+    markChapterCleared: markChapterCleared,
+    getChapter: getChapter,
   };
 })();
