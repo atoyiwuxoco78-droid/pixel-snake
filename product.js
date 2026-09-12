@@ -164,6 +164,15 @@
     return document.getElementById(id);
   }
 
+  function isDevMode() {
+    try {
+      var q = new URLSearchParams(window.location.search);
+      if (q.get("dev") === "1" || q.get("debug") === "1") return true;
+      if (localStorage.getItem("pixel-snake-dev") === "1") return true;
+    } catch (e) {}
+    return false;
+  }
+
   function setHidden(el, hide) {
     if (!el) return;
     if (hide) {
@@ -473,9 +482,88 @@
     if (level >= 3) unlock("level_3");
   }
 
+
+  function unlockAllDev() {
+    if (!isDevMode()) return false;
+    var i;
+    for (i = 0; i < ACHIEVEMENTS.length; i++) {
+      meta.unlocked[ACHIEVEMENTS[i].id] = meta.unlocked[ACHIEVEMENTS[i].id] || Date.now();
+    }
+    if (!meta.chaptersCleared) meta.chaptersCleared = {};
+    for (i = 0; i < STORY.length; i++) {
+      meta.chaptersCleared[STORY[i].id] = meta.chaptersCleared[STORY[i].id] || Date.now();
+      meta.seenStory[STORY[i].id] = true;
+    }
+    saveMeta();
+    // unlock + select last premium skin for visibility
+    try {
+      localStorage.setItem(SKIN_KEY, "gold");
+      skinId = "gold";
+    } catch (e) {}
+    renderAchievements();
+    renderSkins();
+    renderStory();
+    var g = window.PixelSnakeGame;
+    if (g && g.redraw) g.redraw();
+    var el = $("toast");
+    if (el) {
+      el.textContent = "开发者 · 已全解锁";
+      el.className = "toast toast-ok";
+      void el.offsetWidth;
+      setTimeout(function () {
+        el.classList.add("hidden");
+      }, 1400);
+    }
+    return true;
+  }
+
+  function resetProgressDev() {
+    if (!isDevMode()) return false;
+    meta.unlocked = {};
+    meta.seenStory = {};
+    meta.chaptersCleared = {};
+    saveMeta();
+    try {
+      localStorage.setItem(SKIN_KEY, "cyan");
+      skinId = "cyan";
+    } catch (e) {}
+    renderAchievements();
+    renderSkins();
+    renderStory();
+    var g = window.PixelSnakeGame;
+    if (g && g.redraw) g.redraw();
+    var el = $("toast");
+    if (el) {
+      el.textContent = "开发者 · 进度已清空";
+      el.className = "toast toast-ok";
+      void el.offsetWidth;
+      setTimeout(function () {
+        el.classList.add("hidden");
+      }, 1400);
+    }
+    return true;
+  }
+
   function wire() {
     var hubPlay = $("hubPlay");
     var hubMp = $("hubMp");
+
+    var devStrip = $("hubDevStrip");
+    if (devStrip) {
+      if (isDevMode()) {
+        setHidden(devStrip, false);
+        try {
+          localStorage.setItem("pixel-snake-dev", "1");
+        } catch (e) {}
+      } else {
+        setHidden(devStrip, true);
+      }
+    }
+    var btnUnlock = $("hubDevUnlockAll");
+    if (btnUnlock) btnUnlock.addEventListener("click", unlockAllDev);
+    var btnReset = $("hubDevReset");
+    if (btnReset) btnReset.addEventListener("click", resetProgressDev);
+
     var hubAch = $("hubOpenAchievements");
     var hubSk = $("hubOpenSkins");
     var hubSt = $("hubOpenStory");
@@ -582,5 +670,8 @@
     isHubOpen: isHubOpen,
     markChapterCleared: markChapterCleared,
     getChapter: getChapter,
+    isDevMode: isDevMode,
+    unlockAllDev: unlockAllDev,
+    resetProgressDev: resetProgressDev,
   };
 })();

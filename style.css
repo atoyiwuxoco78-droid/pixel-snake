@@ -1743,3 +1743,17 @@ body.hub-open .app {
   gap: 0.45rem;
   flex-wrap: wrap;
 }
+
+.hub-dev-strip {
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed rgba(255, 100, 100, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.hub-dev-label {
+  margin: 0 0 0.15rem;
+  font-size: 11px;
+  color: rgba(255, 140, 140, 0.9);
+}

@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./style.css?v=24" />
+  <link rel="stylesheet" href="./style.css?v=25" />
 </head>
 <body>
   <div class="scanlines" aria-hidden="true"></div>
@@ -38,6 +38,11 @@
           <button type="button" class="btn btn-secondary" id="hubOpenSeason">本周赛季</button>
         </div>
         <p class="hub-footnote">登录可同步云端成绩 · 可安装到桌面</p>
+        <div class="hub-dev-strip hidden" id="hubDevStrip" hidden>
+          <p class="hub-dev-label">开发者工具（?dev=1）</p>
+          <button type="button" class="btn btn-secondary btn-sm" id="hubDevUnlockAll">全解锁 · 成就/皮肤/章节</button>
+          <button type="button" class="btn btn-danger btn-sm" id="hubDevReset">清空进度</button>
+        </div>
       </div>
 
       <div id="hubAchievements" class="hub-panel hidden" hidden>
@@ -296,7 +301,7 @@
     </main>
 
     <footer class="footer">
-      <span class="build-version" id="buildVersion">版本 v24 · 剧情选关</span><span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
+      <span class="build-version" id="buildVersion">版本 v25 · 开发者解锁</span><span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
     </footer>
   </div>
 
@@ -346,20 +351,20 @@
     </div>
   </div>
 
-  <script src="./product.js?v=24"></script>
-  <script src="./game.js?v=24"></script>
-  <script type="module" src="./auth.js?v=24"></script>
-  <script type="module" src="./multiplayer.js?v=24"></script>
+  <script src="./product.js?v=25"></script>
+  <script src="./game.js?v=25"></script>
+  <script type="module" src="./auth.js?v=25"></script>
+  <script type="module" src="./multiplayer.js?v=25"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=24").then((reg) => {
+        navigator.serviceWorker.register("./sw.js?v=25").then((reg) => {
           reg.update();
         }).catch(() => {});
         // One-time: drop ancient caches if a controller is stuck
         caches.keys().then((keys) => {
           keys.forEach((k) => {
-            if (k !== "pixel-snake-v24") caches.delete(k);
+            if (k !== "pixel-snake-v25") caches.delete(k);
           });
         }).catch(() => {});
       });
