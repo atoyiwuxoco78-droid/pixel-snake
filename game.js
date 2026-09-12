@@ -127,6 +127,54 @@
       toastClass: "toast-devil",
       timed: false,
     },
+    ghost: {
+      id: "ghost",
+      label: "幽灵",
+      color: "#9aa4b2",
+      highlight: "#e8ecf1",
+      toastClass: "toast-ghost",
+      timed: true,
+      durationMs: 4500,
+    },
+    bomb: {
+      id: "bomb",
+      label: "炸弹",
+      color: "#ff3b3b",
+      highlight: "#ffb0b0",
+      toastClass: "toast-bomb",
+      timed: false,
+      instant: true,
+      radius: 2,
+    },
+    freeze: {
+      id: "freeze",
+      label: "冻结",
+      color: "#7ecbff",
+      highlight: "#d6f0ff",
+      toastClass: "toast-freeze",
+      timed: true,
+      durationMs: 5000,
+    },
+    decoy: {
+      id: "decoy",
+      label: "诱饵",
+      color: "#5ce1e6",
+      highlight: "#c9f7f9",
+      toastClass: "toast-decoy",
+      timed: false,
+      instant: true,
+    },
+    greed: {
+      id: "greed",
+      label: "贪婪",
+      color: "#ffb020",
+      highlight: "#ffe0a0",
+      toastClass: "toast-greed",
+      timed: false,
+      foods: 3,
+      bonusPts: 20,
+      speedStepMs: 10,
+    },
   };
 
   // ----- DOM -----
@@ -183,6 +231,11 @@
   let magnetUntil = 0; // 磁铁: timed 3x3 apple pickup
   let lives = 0; // 余命（恶魔果实兑换，可贷款扣成负分）
   let devilFruitOpen = false;
+  let ghostUntil = 0; // 幽灵: pass through self
+  let freezeUntil = 0; // 冻结: hold speed/obstacle pressure
+  let decoy = null; // { x, y } fake tail that absorbs one self-hit
+  let greedFoodsLeft = 0; // 贪婪: next N foods bonus + speed
+  let greedSpeedStacks = 0; // how many greed eats accelerated us
   let invulnUntil = 0; // brief invulnerability after shield absorb
   let toastTimer = null;
   let powerHudTimer = null;
@@ -428,7 +481,18 @@
   }
 
   function currentTickMs() {
-    let ms = baseTickForLevel(level, foodsEaten);
+    let ms;
+    if (Date.now() < freezeUntil) {
+      // Freeze: pressure held — comfortable base pace
+      ms = diff.baseTickMs;
+    } else {
+      ms = baseTickForLevel(level, foodsEaten);
+      if (greedSpeedStacks > 0) {
+        const gMeta = POWER_TYPES.greed;
+        const step = (gMeta && gMeta.speedStepMs) || 10;
+        ms = Math.max(diff.minTickMs, ms - greedSpeedStacks * step);
+      }
+    }
     if (activePower && activePower.type === "slow") {
       ms = Math.min(diff.baseTickMs + 40, Math.floor(ms * 1.65));
     }
@@ -480,6 +544,20 @@
       const left = Math.max(0, Math.ceil((magnetUntil - Date.now()) / 1000));
       parts.push("磁铁 " + left + "s");
     }
+    if (Date.now() < ghostUntil) {
+      const left = Math.max(0, Math.ceil((ghostUntil - Date.now()) / 1000));
+      parts.push("幽灵 " + left + "s");
+    }
+    if (Date.now() < freezeUntil) {
+      const left = Math.max(0, Math.ceil((freezeUntil - Date.now()) / 1000));
+      parts.push("冻结 " + left + "s");
+    }
+    if (decoy) {
+      parts.push("诱饵");
+    }
+    if (greedFoodsLeft > 0) {
+      parts.push("贪婪×" + greedFoodsLeft);
+    }
     powerStatusEl.textContent = parts.join(" · ");
   }
 
@@ -488,7 +566,17 @@
     activePower = null;
     updatePowerHud();
     // Keep HUD ticker alive for shield / invuln / double; only stop if idle
-    if (doubleFoodsLeft <= 0 && shieldCharges <= 0 && phaseCharges <= 0 && Date.now() >= magnetUntil && !isInvulnerable()) {
+    if (
+      doubleFoodsLeft <= 0 &&
+      shieldCharges <= 0 &&
+      phaseCharges <= 0 &&
+      Date.now() >= magnetUntil &&
+      Date.now() >= ghostUntil &&
+      Date.now() >= freezeUntil &&
+      !decoy &&
+      greedFoodsLeft <= 0 &&
+      !isInvulnerable()
+    ) {
       if (powerHudTimer) {
         clearInterval(powerHudTimer);
         powerHudTimer = null;
@@ -505,6 +593,14 @@
       } else {
         updatePowerHud();
       }
+      // Freeze ending restores speed + obstacle pressure
+      if (freezeUntil > 0 && Date.now() >= freezeUntil) {
+        freezeUntil = 0;
+        rebuildObstacles(obstacleCountForLevel(level));
+        restartTimer();
+        updatePowerHud();
+        draw();
+      }
       // Flash draw while invulnerable
       if (isInvulnerable()) {
         draw();
@@ -519,6 +615,10 @@
         shieldCharges <= 0 &&
         phaseCharges <= 0 &&
         Date.now() >= magnetUntil &&
+        Date.now() >= ghostUntil &&
+        Date.now() >= freezeUntil &&
+        !decoy &&
+        greedFoodsLeft <= 0 &&
         !isInvulnerable()
       ) {
         clearInterval(powerHudTimer);
@@ -580,6 +680,71 @@
       return;
     }
 
+    // Ghost: timed self-phase
+    if (type === "ghost") {
+      const dur = meta.durationMs || 4500;
+      ghostUntil = Date.now() + dur;
+      showToast("幽灵!", meta.toastClass);
+      updatePowerHud();
+      startPowerHudTicker();
+      return;
+    }
+
+    // Bomb: clear obstacles near head
+    if (type === "bomb") {
+      const head = snake[0];
+      if (!head) {
+        showToast("炸弹!", meta.toastClass);
+        return;
+      }
+      const r = meta.radius || 2;
+      const before = obstacles.length;
+      obstacles = obstacles.filter(function (o) {
+        return Math.abs(o.x - head.x) > r || Math.abs(o.y - head.y) > r;
+      });
+      const cleared = before - obstacles.length;
+      showToast(cleared ? "炸弹 −" + cleared + "!" : "炸弹!", meta.toastClass);
+      draw();
+      return;
+    }
+
+    // Freeze: hold speed + obstacle pressure
+    if (type === "freeze") {
+      const dur = meta.durationMs || 5000;
+      freezeUntil = Date.now() + dur;
+      showToast("冻结!", meta.toastClass);
+      updatePowerHud();
+      startPowerHudTicker();
+      restartTimer();
+      return;
+    }
+
+    // Decoy: drop fake tail; next self-hit consumes it
+    if (type === "decoy") {
+      const tip = snake.length ? snake[snake.length - 1] : null;
+      if (tip) {
+        decoy = { x: tip.x, y: tip.y };
+        if (snake.length > MIN_SNAKE_LEN) {
+          snake.pop();
+          lengthEl.textContent = String(snake.length);
+        }
+      }
+      showToast("诱饵!", meta.toastClass);
+      updatePowerHud();
+      startPowerHudTicker();
+      draw();
+      return;
+    }
+
+    // Greed: next N apples worth more, but speed up
+    if (type === "greed") {
+      greedFoodsLeft = meta.foods || 3;
+      showToast("贪婪×" + greedFoodsLeft + "!", meta.toastClass);
+      updatePowerHud();
+      startPowerHudTicker();
+      return;
+    }
+
     // Devil fruit: pause + choose score→lives (loan allowed)
     if (type === "devil") {
       openDevilFruitModal();
@@ -596,6 +761,23 @@
 
   function isPhasing() {
     return phaseCharges > 0;
+  }
+
+  function isGhosting() {
+    return Date.now() < ghostUntil;
+  }
+
+  function isFrozen() {
+    return Date.now() < freezeUntil;
+  }
+
+  function consumeDecoy() {
+    if (!decoy) return false;
+    decoy = null;
+    showToast("诱饵生效!", "toast-decoy");
+    updatePowerHud();
+    startPowerHudTicker();
+    return true;
   }
 
   function consumePhaseCharge() {
@@ -778,6 +960,14 @@
     if (newLevel === level) return;
     const leveledUp = newLevel > level;
     level = newLevel;
+    if (isFrozen()) {
+      // Freeze: level number may update, but do not rebuild obstacles yet
+      if (leveledUp && showFeedback) {
+        showToast("关卡 " + level + "（冻结中）", "toast-freeze");
+      }
+      updateHUD();
+      return;
+    }
     rebuildObstacles(obstacleCountForLevel(level));
     // Drop / replace items if now blocked by new obstacles
     if (powerUp) {
@@ -824,6 +1014,11 @@
     lives = 0;
     devilFruitOpen = false;
     if (devilFruitModal) setModalHidden(devilFruitModal, true);
+    ghostUntil = 0;
+    freezeUntil = 0;
+    decoy = null;
+    greedFoodsLeft = 0;
+    greedSpeedStacks = 0;
     invulnUntil = 0;
     clearActivePower();
     // Hell starts with obstacles at level 1
@@ -1153,6 +1348,15 @@
       showToast("+20 双倍!", "toast-double");
       updatePowerHud();
     }
+    if (greedFoodsLeft > 0) {
+      const bonus = (POWER_TYPES.greed && POWER_TYPES.greed.bonusPts) || 20;
+      pts += bonus;
+      greedFoodsLeft -= 1;
+      greedSpeedStacks += 1;
+      showToast("+" + pts + " 贪婪!", "toast-greed");
+      updatePowerHud();
+      startPowerHudTicker();
+    }
     score += pts;
     if (eatenCell) replaceEatenFood(eatenCell);
     else ensureTwoFoods();
@@ -1237,21 +1441,27 @@
     // Self collision (ignore tail tip that will move away unless growing)
     const nearbyFoods = foodsNearHead(nx, ny);
     const willGrow = nearbyFoods.length > 0;
-    for (let i = 0; i < snake.length - (willGrow ? 0 : 1); i++) {
-      if (snake[i].x === nx && snake[i].y === ny) {
-        // Invuln / shield absorb one self-hit; phase does not
-        if (isInvulnerable()) {
+    if (!isGhosting()) {
+      for (let i = 0; i < snake.length - (willGrow ? 0 : 1); i++) {
+        if (snake[i].x === nx && snake[i].y === ny) {
+          // Decoy: absorb one self-hit and continue into the cell
+          if (consumeDecoy()) {
+            break;
+          }
+          // Invuln / shield absorb one self-hit; phase does not
+          if (isInvulnerable()) {
+            draw();
+            return;
+          }
+          if (hasShield()) {
+            consumeShield();
+            draw();
+            return;
+          }
+          consumeLifeOrDie();
           draw();
           return;
         }
-        if (hasShield()) {
-          consumeShield();
-          draw();
-          return;
-        }
-        consumeLifeOrDie();
-        draw();
-        return;
       }
     }
 
@@ -1399,7 +1609,40 @@
         ctx.arc(px + CELL / 2, py + CELL / 2, 5, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillRect(px + 12, py + 7, 4, 4);
+      } else if (powerUp.type === "ghost") {
+        ctx.globalAlpha = 0.5;
+        ctx.fillRect(px + 9, py + 9, 10, 10);
+        ctx.globalAlpha = 1;
+      } else if (powerUp.type === "bomb") {
+        ctx.beginPath();
+        ctx.arc(px + CELL / 2, py + CELL / 2 + 1, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillRect(px + 14, py + 7, 3, 4);
+      } else if (powerUp.type === "freeze") {
+        ctx.fillRect(px + 10, py + 10, 3, 8);
+        ctx.fillRect(px + 15, py + 10, 3, 8);
+        ctx.fillRect(px + 10, py + 10, 8, 3);
+      } else if (powerUp.type === "decoy") {
+        ctx.fillRect(px + 9, py + 12, 10, 4);
+        ctx.fillRect(px + 12, py + 9, 4, 10);
+      } else if (powerUp.type === "greed") {
+        ctx.fillRect(px + 9, py + 9, 10, 3);
+        ctx.fillRect(px + 9, py + 14, 10, 3);
+        ctx.fillRect(px + 9, py + 19, 10, 3);
       }
+    }
+
+    // Decoy marker on board
+    if (decoy) {
+      const dx = decoy.x * CELL;
+      const dy = decoy.y * CELL;
+      ctx.globalAlpha = 0.45 + 0.2 * Math.sin(Date.now() / 200);
+      ctx.fillStyle = "#5ce1e6";
+      ctx.shadowColor = "#5ce1e6";
+      ctx.shadowBlur = 10;
+      ctx.fillRect(dx + 4, dy + 4, CELL - 8, CELL - 8);
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
     }
 
     // Foods — glowing pixel apples (×2)

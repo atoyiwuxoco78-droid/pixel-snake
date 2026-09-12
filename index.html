@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./style.css?v=19" />
+  <link rel="stylesheet" href="./style.css?v=20" />
 </head>
 <body>
   <div class="scanlines" aria-hidden="true"></div>
@@ -108,6 +108,11 @@
               <span class="leg-shield">■</span>护盾
               <span class="leg-magnet">■</span>磁铁
               <span class="leg-devil">■</span>恶魔果实
+              <span class="leg-ghost">■</span>幽灵
+              <span class="leg-bomb">■</span>炸弹
+              <span class="leg-freeze">■</span>冻结
+              <span class="leg-decoy">■</span>诱饵
+              <span class="leg-greed">■</span>贪婪
             </p>
             <p class="install-hint">可在浏览器菜单里安装到桌面</p>
           </div>
@@ -216,7 +221,7 @@
     </main>
 
     <footer class="footer">
-      <span class="build-version" id="buildVersion">版本 v19 · 恶魔果实</span><span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
+      <span class="build-version" id="buildVersion">版本 v20 · 五技能</span><span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
     </footer>
   </div>
 
@@ -266,19 +271,19 @@
     </div>
   </div>
 
-  <script src="./game.js?v=19"></script>
-  <script type="module" src="./auth.js?v=19"></script>
-  <script type="module" src="./multiplayer.js?v=19"></script>
+  <script src="./game.js?v=20"></script>
+  <script type="module" src="./auth.js?v=20"></script>
+  <script type="module" src="./multiplayer.js?v=20"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=19").then((reg) => {
+        navigator.serviceWorker.register("./sw.js?v=20").then((reg) => {
           reg.update();
         }).catch(() => {});
         // One-time: drop ancient caches if a controller is stuck
         caches.keys().then((keys) => {
           keys.forEach((k) => {
-            if (k !== "pixel-snake-v19") caches.delete(k);
+            if (k !== "pixel-snake-v20") caches.delete(k);
           });
         }).catch(() => {});
       });
