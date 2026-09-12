@@ -111,6 +111,14 @@
       toastClass: "toast-shield",
       timed: false,
     },
+    magnet: {
+      id: "magnet",
+      label: "磁铁",
+      color: "#ff5cad",
+      highlight: "#ffb3d4",
+      toastClass: "toast-magnet",
+      timed: true,
+    },
   };
 
   // ----- DOM -----
@@ -162,6 +170,7 @@
   let doubleFoodsLeft = 0; // 双倍分: next N foods
   let shieldCharges = 0; // 护盾: one charge, no time limit until used
   let phaseCharges = 0; // 穿墙: N wraps/obstacle passes, no time limit
+  let magnetUntil = 0; // 磁铁: timed 3x3 apple pickup
   let invulnUntil = 0; // brief invulnerability after shield absorb
   let toastTimer = null;
   let powerHudTimer = null;
@@ -455,6 +464,10 @@
     if (phaseCharges > 0) {
       parts.push("穿墙×" + phaseCharges);
     }
+    if (Date.now() < magnetUntil) {
+      const left = Math.max(0, Math.ceil((magnetUntil - Date.now()) / 1000));
+      parts.push("磁铁 " + left + "s");
+    }
     powerStatusEl.textContent = parts.join(" · ");
   }
 
@@ -463,7 +476,7 @@
     activePower = null;
     updatePowerHud();
     // Keep HUD ticker alive for shield / invuln / double; only stop if idle
-    if (doubleFoodsLeft <= 0 && shieldCharges <= 0 && phaseCharges <= 0 && !isInvulnerable()) {
+    if (doubleFoodsLeft <= 0 && shieldCharges <= 0 && phaseCharges <= 0 && Date.now() >= magnetUntil && !isInvulnerable()) {
       if (powerHudTimer) {
         clearInterval(powerHudTimer);
         powerHudTimer = null;
@@ -488,7 +501,14 @@
         updatePowerHud();
         draw();
       }
-      if (!activePower && doubleFoodsLeft <= 0 && shieldCharges <= 0 && phaseCharges <= 0 && !isInvulnerable()) {
+      if (
+        !activePower &&
+        doubleFoodsLeft <= 0 &&
+        shieldCharges <= 0 &&
+        phaseCharges <= 0 &&
+        Date.now() >= magnetUntil &&
+        !isInvulnerable()
+      ) {
         clearInterval(powerHudTimer);
         powerHudTimer = null;
       }
@@ -539,7 +559,16 @@
       return;
     }
 
-    // Timed: slow only — keep unused shield / phase charges
+    // Magnet: timed 3x3 pickup, stacks with slow / charges
+    if (type === "magnet") {
+      magnetUntil = Date.now() + POWERUP_DURATION_MS;
+      showToast("磁铁!", meta.toastClass);
+      updatePowerHud();
+      startPowerHudTicker();
+      return;
+    }
+
+    // Timed: slow only — keep unused shield / phase / magnet
     activePower = { type: type, endsAt: Date.now() + POWERUP_DURATION_MS };
     showToast(meta.label + "!", meta.toastClass);
     updatePowerHud();
@@ -773,6 +802,7 @@
     doubleFoodsLeft = 0;
     shieldCharges = 0;
     phaseCharges = 0;
+    magnetUntil = 0;
     invulnUntil = 0;
     clearActivePower();
     // Hell starts with obstacles at level 1
@@ -822,6 +852,25 @@
       if (foods[i].x === x && foods[i].y === y) return foods[i];
     }
     return null;
+  }
+
+  function hasMagnet() {
+    return Date.now() < magnetUntil;
+  }
+
+  /** Exact cell, or 3x3 (Chebyshev ≤1) when magnet is active. */
+  function foodsNearHead(x, y) {
+    const out = [];
+    const magnet = hasMagnet();
+    for (let i = 0; i < foods.length; i++) {
+      const f = foods[i];
+      if (magnet) {
+        if (Math.abs(f.x - x) <= 1 && Math.abs(f.y - y) <= 1) out.push(f);
+      } else if (f.x === x && f.y === y) {
+        out.push(f);
+      }
+    }
+    return out;
   }
 
   function maybeSpawnPowerUp() {
@@ -1087,8 +1136,8 @@
     }
 
     // Self collision (ignore tail tip that will move away unless growing)
-    const eaten = foodAt(nx, ny);
-    const willGrow = !!eaten;
+    const nearbyFoods = foodsNearHead(nx, ny);
+    const willGrow = nearbyFoods.length > 0;
     for (let i = 0; i < snake.length - (willGrow ? 0 : 1); i++) {
       if (snake[i].x === nx && snake[i].y === ny) {
         // Invuln / shield absorb one self-hit; phase does not
@@ -1117,7 +1166,21 @@
     }
 
     if (willGrow) {
-      onFoodEaten(eaten);
+      // Snapshot cells before onFoodEaten mutates foods[]
+      const eatenList = nearbyFoods.map(function (f) {
+        return { x: f.x, y: f.y };
+      });
+      for (let i = 0; i < eatenList.length; i++) {
+        onFoodEaten(eatenList[i]);
+      }
+      // Grow one segment per apple (unshift already grew 1)
+      if (eatenList.length > 1) {
+        const tip = snake[snake.length - 1];
+        for (let i = 1; i < eatenList.length; i++) {
+          snake.push({ x: tip.x, y: tip.y });
+        }
+      }
+      lengthEl.textContent = String(snake.length);
     } else {
       snake.pop();
       lengthEl.textContent = String(snake.length);
@@ -1228,6 +1291,10 @@
         ctx.fillRect(px + 10, py + 8, 3, 12);
         ctx.fillRect(px + 15, py + 8, 3, 12);
         ctx.fillRect(px + 10, py + 17, 8, 3);
+      } else if (powerUp.type === "magnet") {
+        ctx.fillRect(px + 9, py + 9, 3, 10);
+        ctx.fillRect(px + 16, py + 9, 3, 10);
+        ctx.fillRect(px + 9, py + 16, 10, 3);
       }
     }
 
