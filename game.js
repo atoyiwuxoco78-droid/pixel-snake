@@ -470,6 +470,13 @@
     addSeasonScore(name, pts, id);
     if (id === boardDiffId) renderLeaderboard();
     updateHighScoreDisplay();
+    // Refresh season panel (local scope) so a just-finished run shows up
+    try {
+      var scopeBtn = document.querySelector("#seasonScopeTabs [data-season-scope].active");
+      var scope = scopeBtn ? scopeBtn.getAttribute("data-season-scope") : "cloud";
+      if (scope === "local") renderLocalSeason(id);
+      else refreshSeasonBoard();
+    } catch (_) {}
   }
 
   function clearScores() {
@@ -1304,16 +1311,54 @@
     return "游客";
   }
 
+  function refreshSeasonBoard() {
+    const api = fb();
+    if (api && typeof api.refreshSeasonLeaderboard === "function") {
+      try {
+        api.refreshSeasonLeaderboard(boardDiffId || difficultyId);
+      } catch (_) {}
+    } else {
+      renderLocalSeason(boardDiffId || difficultyId);
+    }
+  }
+
   function syncCloudScore(pts) {
     const api = fb();
-    if (!api || !api.isLoggedIn || !api.isLoggedIn() || !api.saveBestScore) {
+    if (!api || !api.isLoggedIn || !api.isLoggedIn()) {
       return Promise.resolve({ saved: false, reason: "not-logged-in" });
     }
-    return Promise.resolve(api.saveBestScore(pts, difficultyId)).catch(function (err) {
+    // Always try weekly season write (independent of all-time best)
+    var seasonP =
+      typeof api.saveSeasonScore === "function"
+        ? Promise.resolve(api.saveSeasonScore(pts, difficultyId)).catch(function (err) {
+            return {
+              saved: false,
+              reason: "error",
+              message: (err && (err.message || err.code)) || "未知错误",
+            };
+          })
+        : Promise.resolve({ saved: false, reason: "no-season-api" });
+
+    var bestP =
+      typeof api.saveBestScore === "function"
+        ? Promise.resolve(api.saveBestScore(pts, difficultyId)).catch(function (err) {
+            return {
+              saved: false,
+              reason: "error",
+              message: (err && (err.message || err.code)) || "未知错误",
+            };
+          })
+        : Promise.resolve({ saved: false, reason: "no-best-api" });
+
+    return Promise.all([bestP, seasonP]).then(function (pair) {
+      var best = pair[0] || {};
+      var season = pair[1] || {};
+      refreshSeasonBoard();
       return {
-        saved: false,
-        reason: "error",
-        message: (err && (err.message || err.code)) || "未知错误",
+        saved: !!(best.saved || season.saved),
+        best: best,
+        season: season,
+        reason: best.saved ? "best" : season.saved ? "season" : best.reason || season.reason,
       };
     });
   }

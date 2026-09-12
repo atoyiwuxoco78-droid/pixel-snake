@@ -399,6 +399,10 @@ async function saveBestScore(pts, difficultyId) {
     if (snap.exists()) {
       previous = snap.data().score;
       if (typeof previous === "number" && score < previous) {
+        // Career best unchanged — still update weekly season independently
+        try {
+          await saveSeasonScore(score, difficulty);
+        } catch (_) {}
         return { saved: false, reason: "lower", previous: previous, difficulty: difficulty };
       }
     } else {

@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./style.css?v=22" />
+  <link rel="stylesheet" href="./style.css?v=23" />
 </head>
 <body>
   <div class="scanlines" aria-hidden="true"></div>
@@ -263,18 +263,18 @@
 
         <div class="board-panel hidden" id="boardSeason" role="tabpanel" aria-labelledby="tabSeason" hidden>
           <div class="board-header">
-            <h2 class="board-title neon-yellow" id="seasonBoardTitle">赛季 · 普通</h2>
+            <h2 class="board-title neon-yellow" id="seasonBoardTitle">赛季修复 · 普通</h2>
             <span class="board-sub" id="seasonBoardSub">本周 TOP 10 · 周一重置</span>
           </div>
           <p class="season-countdown" id="seasonCountdown" aria-live="polite"></p>
-          <div class="season-scope-tabs" id="seasonScopeTabs" role="tablist" aria-label="赛季榜范围">
-            <button type="button" class="lb-diff-tab active" data-season-scope="cloud" aria-selected="true">云端赛季</button>
-            <button type="button" class="lb-diff-tab" data-season-scope="local" aria-selected="false">本机赛季</button>
+          <div class="season-scope-tabs" id="seasonScopeTabs" role="tablist" aria-label="赛季修复榜范围">
+            <button type="button" class="lb-diff-tab active" data-season-scope="cloud" aria-selected="true">云端赛季修复</button>
+            <button type="button" class="lb-diff-tab" data-season-scope="local" aria-selected="false">本机赛季修复</button>
           </div>
           <ol class="leaderboard" id="seasonLeaderboard">
             <li class="empty">加载中…</li>
           </ol>
-          <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshSeason">刷新赛季</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshSeason">刷新赛季修复</button>
         </div>
 
         <div class="board-panel hidden" id="boardLocal" role="tabpanel" aria-labelledby="tabLocal" hidden>
@@ -291,7 +291,7 @@
     </main>
 
     <footer class="footer">
-      <span class="build-version" id="buildVersion">版本 v22 · 赛季</span><span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
+      <span class="build-version" id="buildVersion">版本 v23 · 赛季修复</span><span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
     </footer>
   </div>
 
@@ -341,20 +341,20 @@
     </div>
   </div>
 
-  <script src="./product.js?v=22"></script>
-  <script src="./game.js?v=22"></script>
-  <script type="module" src="./auth.js?v=22"></script>
-  <script type="module" src="./multiplayer.js?v=22"></script>
+  <script src="./product.js?v=23"></script>
+  <script src="./game.js?v=23"></script>
+  <script type="module" src="./auth.js?v=23"></script>
+  <script type="module" src="./multiplayer.js?v=23"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=22").then((reg) => {
+        navigator.serviceWorker.register("./sw.js?v=23").then((reg) => {
           reg.update();
         }).catch(() => {});
         // One-time: drop ancient caches if a controller is stuck
         caches.keys().then((keys) => {
           keys.forEach((k) => {
-            if (k !== "pixel-snake-v22") caches.delete(k);
+            if (k !== "pixel-snake-v23") caches.delete(k);
           });
         }).catch(() => {});
       });
