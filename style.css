@@ -1524,3 +1524,29 @@ body.mode-mp .power-status {
 .mp-room-actions .btn {
   width: 100%;
 }
+
+.leg-devil {
+  color: #c84bff;
+}
+.toast.toast-devil {
+  color: #c84bff;
+  text-shadow: 0 0 10px rgba(200, 75, 255, 0.85), 0 0 4px #000;
+}
+.modal-box-devil {
+  max-width: 22rem;
+}
+.devil-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.devil-choices .btn {
+  width: 100%;
+  text-align: left;
+  justify-content: flex-start;
+}
+.stat-value.is-negative {
+  color: #ff6b6b;
+  text-shadow: 0 0 8px rgba(255, 80, 80, 0.55);
+}

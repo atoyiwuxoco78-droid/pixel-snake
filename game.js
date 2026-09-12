@@ -119,6 +119,14 @@
       toastClass: "toast-magnet",
       timed: true,
     },
+    devil: {
+      id: "devil",
+      label: "恶魔果实",
+      color: "#c84bff",
+      highlight: "#e8b0ff",
+      toastClass: "toast-devil",
+      timed: false,
+    },
   };
 
   // ----- DOM -----
@@ -139,6 +147,8 @@
   const btnClearScores = document.getElementById("btnClearScores");
   const leaderboardEl = document.getElementById("leaderboard");
   const scoreModal = document.getElementById("scoreModal");
+  const devilFruitModal = document.getElementById("devilFruitModal");
+  const livesEl = document.getElementById("lives");
   const finalScoreEl = document.getElementById("finalScore");
   const nicknameInput = document.getElementById("nickname");
   const btnSubmitScore = document.getElementById("btnSubmitScore");
@@ -171,6 +181,8 @@
   let shieldCharges = 0; // 护盾: one charge, no time limit until used
   let phaseCharges = 0; // 穿墙: N wraps/obstacle passes, no time limit
   let magnetUntil = 0; // 磁铁: timed 3x3 apple pickup
+  let lives = 0; // 余命（恶魔果实兑换，可贷款扣成负分）
+  let devilFruitOpen = false;
   let invulnUntil = 0; // brief invulnerability after shield absorb
   let toastTimer = null;
   let powerHudTimer = null;
@@ -406,7 +418,7 @@
 
   // ----- Speed / level -----
   function levelFromScore(pts) {
-    return 1 + Math.floor(pts / SCORE_PER_LEVEL);
+    return Math.max(1, 1 + Math.floor(pts / SCORE_PER_LEVEL));
   }
 
   function baseTickForLevel(lv, foods) {
@@ -565,6 +577,12 @@
       showToast("磁铁!", meta.toastClass);
       updatePowerHud();
       startPowerHudTicker();
+      return;
+    }
+
+    // Devil fruit: pause + choose score→lives (loan allowed)
+    if (type === "devil") {
+      openDevilFruitModal();
       return;
     }
 
@@ -803,6 +821,9 @@
     shieldCharges = 0;
     phaseCharges = 0;
     magnetUntil = 0;
+    lives = 0;
+    devilFruitOpen = false;
+    if (devilFruitModal) setModalHidden(devilFruitModal, true);
     invulnUntil = 0;
     clearActivePower();
     // Hell starts with obstacles at level 1
@@ -890,8 +911,10 @@
 
   function updateHUD() {
     scoreEl.textContent = String(score);
+    scoreEl.classList.toggle("is-negative", score < 0);
     levelEl.textContent = String(level);
     lengthEl.textContent = String(snake.length);
+    if (livesEl) livesEl.textContent = String(lives);
     highScoreEl.textContent = String(Math.max(highScore, score));
   }
 
@@ -921,6 +944,7 @@
 
   function pauseGame() {
     if (mpMode) return;
+    if (isDevilFruitOpen()) return;
     if (!running || dead) return;
     paused = !paused;
     if (paused) {
@@ -984,6 +1008,81 @@
       el.removeAttribute("hidden");
       el.classList.remove("hidden");
     }
+  }
+
+
+  function isDevilFruitOpen() {
+    return !!(devilFruitOpen || (devilFruitModal && !devilFruitModal.classList.contains("hidden")));
+  }
+
+  function openDevilFruitModal() {
+    if (mpMode) return;
+    devilFruitOpen = true;
+    clearInterval(timer);
+    timer = null;
+    paused = true;
+    btnPause.textContent = "继续";
+    btnPause.disabled = true;
+    hideOverlay();
+    const hint = document.getElementById("devilFruitScoreHint");
+    if (hint) {
+      hint.textContent =
+        "当前得分：" +
+        score +
+        " · 当前命：" +
+        lives +
+        "（可贷款，换后分数可为负）";
+    }
+    if (devilFruitModal) setModalHidden(devilFruitModal, false);
+    showToast("恶魔果实!", "toast-devil");
+  }
+
+  function resolveDevilFruit(choice) {
+    if (!isDevilFruitOpen()) return;
+    const map = {
+      A: { cost: 0, gain: 0 },
+      B: { cost: 40, gain: 1 },
+      C: { cost: 80, gain: 2 },
+      D: { cost: 160, gain: 3 },
+    };
+    const opt = map[choice] || map.A;
+    if (opt.gain > 0) {
+      score -= opt.cost; // may go negative (loan)
+      lives += opt.gain;
+      showToast(
+        "−" + opt.cost + " 分 · +" + opt.gain + " 命",
+        "toast-devil"
+      );
+    } else {
+      showToast("未换命", "toast-devil");
+    }
+    devilFruitOpen = false;
+    if (devilFruitModal) setModalHidden(devilFruitModal, true);
+    syncLevelAndObstacles(true);
+    updateHUD();
+    updatePowerHud();
+    paused = false;
+    btnPause.disabled = false;
+    btnPause.textContent = "暂停";
+    if (running && !dead) {
+      hideOverlay();
+      restartTimer();
+    }
+    draw();
+  }
+
+  /** Spend a life to survive a fatal hit; otherwise game over. */
+  function consumeLifeOrDie() {
+    if (lives > 0) {
+      lives -= 1;
+      invulnUntil = Date.now() + 1500;
+      showToast("消耗 1 命 · 剩 " + lives, "toast-devil");
+      updateHUD();
+      startPowerHudTicker();
+      return true;
+    }
+    gameOver();
+    return false;
   }
 
   function gameOver() {
@@ -1104,7 +1203,7 @@
         draw();
         return; // skip this move
       } else {
-        gameOver();
+        consumeLifeOrDie();
         draw();
         return;
       }
@@ -1129,7 +1228,7 @@
         draw();
         return;
       } else {
-        gameOver();
+        consumeLifeOrDie();
         draw();
         return;
       }
@@ -1150,7 +1249,7 @@
           draw();
           return;
         }
-        gameOver();
+        consumeLifeOrDie();
         draw();
         return;
       }
@@ -1295,6 +1394,11 @@
         ctx.fillRect(px + 9, py + 9, 3, 10);
         ctx.fillRect(px + 16, py + 9, 3, 10);
         ctx.fillRect(px + 9, py + 16, 10, 3);
+      } else if (powerUp.type === "devil") {
+        ctx.beginPath();
+        ctx.arc(px + CELL / 2, py + CELL / 2, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillRect(px + 12, py + 7, 4, 4);
       }
     }
 
@@ -1438,6 +1542,15 @@
       return;
     }
     if (authOpen || (ae && (ae.id === "authEmail" || ae.id === "authPassword"))) {
+      return;
+    }
+
+    if (isDevilFruitOpen()) {
+      var dk = e.key.toUpperCase();
+      if (dk === "A" || dk === "B" || dk === "C" || dk === "D") {
+        e.preventDefault();
+        resolveDevilFruit(dk);
+      }
       return;
     }
 
@@ -1605,6 +1718,15 @@
     btnPause.disabled = true;
     btnPause.textContent = "暂停";
     showOverlay("准备好了吗？", "按「开始游戏」或空格键");
+  }
+
+
+  if (devilFruitModal) {
+    devilFruitModal.querySelectorAll("[data-devil]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        resolveDevilFruit(btn.getAttribute("data-devil"));
+      });
+    });
   }
 
   window.PixelSnakeGame = {
