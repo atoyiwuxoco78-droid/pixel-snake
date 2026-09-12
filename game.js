@@ -82,7 +82,8 @@
       color: "#b388ff",
       highlight: "#e0d0ff",
       toastClass: "toast-phase",
-      timed: true,
+      timed: false,
+      wraps: 5, // permanent until 5 wall/obstacle phases
     },
     shrink: {
       id: "shrink",
@@ -160,6 +161,7 @@
   let activePower = null; // { type, endsAt } timed powers
   let doubleFoodsLeft = 0; // 双倍分: next N foods
   let shieldCharges = 0; // 护盾: one charge, no time limit until used
+  let phaseCharges = 0; // 穿墙: N wraps/obstacle passes, no time limit
   let invulnUntil = 0; // brief invulnerability after shield absorb
   let toastTimer = null;
   let powerHudTimer = null;
@@ -450,6 +452,9 @@
     if (shieldCharges > 0) {
       parts.push("护盾");
     }
+    if (phaseCharges > 0) {
+      parts.push("穿墙×" + phaseCharges);
+    }
     powerStatusEl.textContent = parts.join(" · ");
   }
 
@@ -458,7 +463,7 @@
     activePower = null;
     updatePowerHud();
     // Keep HUD ticker alive for shield / invuln / double; only stop if idle
-    if (doubleFoodsLeft <= 0 && shieldCharges <= 0 && !isInvulnerable()) {
+    if (doubleFoodsLeft <= 0 && shieldCharges <= 0 && phaseCharges <= 0 && !isInvulnerable()) {
       if (powerHudTimer) {
         clearInterval(powerHudTimer);
         powerHudTimer = null;
@@ -483,7 +488,7 @@
         updatePowerHud();
         draw();
       }
-      if (!activePower && doubleFoodsLeft <= 0 && shieldCharges <= 0 && !isInvulnerable()) {
+      if (!activePower && doubleFoodsLeft <= 0 && shieldCharges <= 0 && phaseCharges <= 0 && !isInvulnerable()) {
         clearInterval(powerHudTimer);
         powerHudTimer = null;
       }
@@ -525,7 +530,16 @@
       return;
     }
 
-    // Timed: slow / phase only — keep unused shield charges
+    // Phase: N wall/obstacle passes, no timed expiry
+    if (type === "phase") {
+      phaseCharges = meta.wraps || 5;
+      showToast("穿墙×" + phaseCharges + "!", meta.toastClass);
+      updatePowerHud();
+      startPowerHudTicker();
+      return;
+    }
+
+    // Timed: slow only — keep unused shield / phase charges
     activePower = { type: type, endsAt: Date.now() + POWERUP_DURATION_MS };
     showToast(meta.label + "!", meta.toastClass);
     updatePowerHud();
@@ -534,7 +548,20 @@
   }
 
   function isPhasing() {
-    return !!(activePower && activePower.type === "phase" && Date.now() < activePower.endsAt);
+    return phaseCharges > 0;
+  }
+
+  function consumePhaseCharge() {
+    if (phaseCharges <= 0) return;
+    phaseCharges -= 1;
+    if (phaseCharges <= 0) {
+      phaseCharges = 0;
+      showToast("穿墙结束", "toast-phase");
+    } else {
+      showToast("穿墙剩余×" + phaseCharges, "toast-phase");
+    }
+    updatePowerHud();
+    startPowerHudTicker();
   }
 
   function hasShield() {
@@ -745,6 +772,7 @@
     powerUp = null;
     doubleFoodsLeft = 0;
     shieldCharges = 0;
+    phaseCharges = 0;
     invulnUntil = 0;
     clearActivePower();
     // Hell starts with obstacles at level 1
@@ -1018,6 +1046,7 @@
       if (phasing) {
         nx = ((nx % COLS) + COLS) % COLS;
         ny = ((ny % ROWS) + ROWS) % ROWS;
+        consumePhaseCharge();
       } else if (isInvulnerable()) {
         draw();
         return; // skip move during post-shield invuln
@@ -1032,25 +1061,25 @@
       }
     }
 
-    // Obstacle collision
-    if (!phasing) {
-      let hitObs = false;
-      for (let i = 0; i < obstacles.length; i++) {
-        if (obstacles[i].x === nx && obstacles[i].y === ny) {
-          hitObs = true;
-          break;
-        }
+    // Obstacle collision (phasing passes through and spends one charge)
+    let hitObs = false;
+    for (let i = 0; i < obstacles.length; i++) {
+      if (obstacles[i].x === nx && obstacles[i].y === ny) {
+        hitObs = true;
+        break;
       }
-      if (hitObs) {
-        if (isInvulnerable()) {
-          draw();
-          return;
-        }
-        if (hasShield()) {
-          consumeShield();
-          draw();
-          return;
-        }
+    }
+    if (hitObs) {
+      if (phasing) {
+        consumePhaseCharge();
+      } else if (isInvulnerable()) {
+        draw();
+        return;
+      } else if (hasShield()) {
+        consumeShield();
+        draw();
+        return;
+      } else {
         gameOver();
         draw();
         return;

@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./style.css?v=16" />
+  <link rel="stylesheet" href="./style.css?v=17" />
 </head>
 <body>
   <div class="scanlines" aria-hidden="true"></div>
@@ -98,7 +98,7 @@
             <p class="hint-legend">
               <span class="leg-apple">■</span>苹果×2
               <span class="leg-slow">■</span>减速
-              <span class="leg-phase">■</span>穿墙
+              <span class="leg-phase">■</span>穿墙×5
               <span class="leg-shrink">■</span>缩短
               <span class="leg-double">■</span>双倍分
               <span class="leg-shield">■</span>护盾
@@ -210,7 +210,7 @@
     </main>
 
     <footer class="footer">
-      <span class="build-version" id="buildVersion">版本 v16 · 再来一局</span><span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
+      <span class="build-version" id="buildVersion">版本 v17 · 穿墙×5</span><span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
     </footer>
   </div>
 
@@ -245,19 +245,19 @@
     </div>
   </div>
 
-  <script src="./game.js?v=16"></script>
-  <script type="module" src="./auth.js?v=16"></script>
-  <script type="module" src="./multiplayer.js?v=16"></script>
+  <script src="./game.js?v=17"></script>
+  <script type="module" src="./auth.js?v=17"></script>
+  <script type="module" src="./multiplayer.js?v=17"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=16").then((reg) => {
+        navigator.serviceWorker.register("./sw.js?v=17").then((reg) => {
           reg.update();
         }).catch(() => {});
         // One-time: drop ancient caches if a controller is stuck
         caches.keys().then((keys) => {
           keys.forEach((k) => {
-            if (k !== "pixel-snake-v16") caches.delete(k);
+            if (k !== "pixel-snake-v17") caches.delete(k);
           });
         }).catch(() => {});
       });
