@@ -426,6 +426,22 @@ function updateMpUi() {
   if (scoreH) scoreH.textContent = String((st && st.scoreH) || 0);
   if (scoreG) scoreG.textContent = String((st && st.scoreG) || 0);
 
+  const rematchBtn = $("btnMpRematch");
+  const showRematch = inARoom && roomData && roomData.status === "ended";
+  setHidden(rematchBtn, !showRematch);
+  if (rematchBtn) {
+    if (role === "host") {
+      rematchBtn.textContent = "再来一局";
+      rematchBtn.disabled = false;
+    } else if (roomData && roomData.guestRematch) {
+      rematchBtn.textContent = "已请求 · 等主机开始";
+      rematchBtn.disabled = true;
+    } else {
+      rematchBtn.textContent = "再来一局";
+      rematchBtn.disabled = false;
+    }
+  }
+
   // Mirror into left HUD when in MP
   if (mode === "mp") {
     const scoreEl = $("score");
@@ -556,6 +572,7 @@ async function createRoom() {
         status: "waiting",
         hostDir: "right",
         guestDir: "left",
+        guestRematch: false,
         createdAt: Date.now(),
         updatedAt: Date.now(),
         state: state,
@@ -676,6 +693,22 @@ function attachRoomListener(code) {
         }, 1000);
       }
 
+      // Guest requested rematch while ended → host starts next round
+      if (
+        role === "host" &&
+        data.status === "ended" &&
+        data.guestUid &&
+        data.guestRematch &&
+        !startTimer
+      ) {
+        setMpStatus("对手想再来一局 · 即将开始", false);
+        showOverlay("再来一局", "对战即将开始…");
+        startTimer = setTimeout(function () {
+          startTimer = null;
+          beginMatchAsHost();
+        }, 600);
+      }
+
       // Sync guest dir from doc for host sim
       if (role === "host" && data.guestDir && DIRS[data.guestDir]) {
         pendingGuestDir = data.guestDir;
@@ -716,7 +749,12 @@ function attachRoomListener(code) {
           "对局结束",
           hName + " " + sh + " · " + gName + " " + sg + " · " + winner
         );
-        setMpStatus("对局结束 · 可退出后重开", false);
+        setMpStatus(
+          role === "host"
+            ? "对局结束 · 点「再来一局」继续（不用退房）"
+            : "对局结束 · 点「再来一局」或等主机开始",
+          false
+        );
       }
     },
     function (err) {
@@ -724,6 +762,44 @@ function attachRoomListener(code) {
       setMpStatus("同步失败：" + ((err && err.code) || "网络错误"), true);
     }
   );
+}
+
+
+async function rematchRoom() {
+  const user = requireLogin();
+  if (!user) return;
+  if (!roomCode || !role || !roomData) {
+    setMpStatus("不在房间内", true);
+    return;
+  }
+  if (roomData.status !== "ended") {
+    setMpStatus("对局进行中，结束后才能再来一局", true);
+    return;
+  }
+  if (!roomData.guestUid) {
+    setMpStatus("对手已离开，请等待或新建房间", true);
+    return;
+  }
+
+  if (role === "host") {
+    setMpStatus("正在开始下一局…", false);
+    showOverlay("再来一局", "对战即将开始…");
+    await beginMatchAsHost();
+    return;
+  }
+
+  // Guest: request rematch; host auto-starts via snapshot
+  try {
+    setMpStatus("已请求再来一局 · 等待主机…", false);
+    await updateDoc(doc(db, "mp_rooms", roomCode), {
+      guestRematch: true,
+      updatedAt: Date.now(),
+    });
+    updateMpUi();
+  } catch (err) {
+    console.warn("[mp] rematch request failed", err);
+    setMpStatus("请求失败：" + ((err && err.code) || "错误"), true);
+  }
 }
 
 async function beginMatchAsHost() {
@@ -739,6 +815,7 @@ async function beginMatchAsHost() {
       status: "playing",
       hostDir: "right",
       guestDir: "left",
+      guestRematch: false,
       state: state,
       updatedAt: Date.now(),
     });
@@ -1277,6 +1354,8 @@ function wireUi() {
   if (btnLeave) btnLeave.addEventListener("click", function () {
     leaveRoom(false);
   });
+  const btnRematch = $("btnMpRematch");
+  if (btnRematch) btnRematch.addEventListener("click", rematchRoom);
   if (joinInput) {
     joinInput.addEventListener("keydown", function (e) {
       if (e.key === "Enter") joinRoom();

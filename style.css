@@ -1509,3 +1509,13 @@ body.mode-mp .power-status {
   background: var(--cyan);
   box-shadow: 0 0 10px rgba(0, 232, 255, 0.35);
 }
+
+.mp-room-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 0.35rem;
+}
+.mp-room-actions .btn {
+  width: 100%;
+}

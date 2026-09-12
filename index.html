@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./style.css?v=15" />
+  <link rel="stylesheet" href="./style.css?v=16" />
 </head>
 <body>
   <div class="scanlines" aria-hidden="true"></div>
@@ -141,7 +141,10 @@
               </div>
             </div>
             <p class="mp-color-hint"><span class="leg-host">■</span>青色主机 · <span class="leg-guest">■</span>品红客机</p>
-            <button type="button" class="btn btn-danger" id="btnMpLeave">退出房间</button>
+            <div class="mp-room-actions">
+              <button type="button" class="btn btn-primary btn-cta hidden" id="btnMpRematch" hidden>再来一局</button>
+              <button type="button" class="btn btn-danger" id="btnMpLeave">退出房间</button>
+            </div>
           </div>
           <p class="mp-status" id="mpStatus" aria-live="polite"></p>
         </div>
@@ -207,7 +210,7 @@
     </main>
 
     <footer class="footer">
-      <span class="build-version" id="buildVersion">版本 v15 · 双人地图</span><span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
+      <span class="build-version" id="buildVersion">版本 v16 · 再来一局</span><span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
     </footer>
   </div>
 
@@ -242,19 +245,19 @@
     </div>
   </div>
 
-  <script src="./game.js?v=15"></script>
-  <script type="module" src="./auth.js?v=15"></script>
-  <script type="module" src="./multiplayer.js?v=15"></script>
+  <script src="./game.js?v=16"></script>
+  <script type="module" src="./auth.js?v=16"></script>
+  <script type="module" src="./multiplayer.js?v=16"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=15").then((reg) => {
+        navigator.serviceWorker.register("./sw.js?v=16").then((reg) => {
           reg.update();
         }).catch(() => {});
         // One-time: drop ancient caches if a controller is stuck
         caches.keys().then((keys) => {
           keys.forEach((k) => {
-            if (k !== "pixel-snake-v15") caches.delete(k);
+            if (k !== "pixel-snake-v16") caches.delete(k);
           });
         }).catch(() => {});
       });
