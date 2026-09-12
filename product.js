@@ -380,6 +380,7 @@
     var hubAch = $("hubOpenAchievements");
     var hubSk = $("hubOpenSkins");
     var hubSt = $("hubOpenStory");
+    var hubSeason = $("hubOpenSeason");
     var backs = document.querySelectorAll("[data-hub-back]");
     var btnMenu = $("btnHubMenu");
 
@@ -402,6 +403,17 @@
     if (hubAch) hubAch.addEventListener("click", function () { openPanel("achievements"); });
     if (hubSk) hubSk.addEventListener("click", function () { openPanel("skins"); });
     if (hubSt) hubSt.addEventListener("click", function () { openPanel("story"); });
+    if (hubSeason) {
+      hubSeason.addEventListener("click", function () {
+        hideHub();
+        var fb = window.PixelSnakeFirebase;
+        if (fb && fb.showSeasonBoard) fb.showSeasonBoard();
+        else {
+          var tab = $("tabSeason");
+          if (tab) tab.click();
+        }
+      });
+    }
     for (var i = 0; i < backs.length; i++) {
       backs[i].addEventListener("click", showHubHome);
     }

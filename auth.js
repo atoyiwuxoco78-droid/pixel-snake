@@ -210,6 +210,179 @@ function errorReason(err) {
   return err.message || "未知错误";
 }
 
+
+/** Asia/Shanghai ISO-like week id: 2026-W37 */
+function shanghaiParts(date) {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = {};
+  fmt.formatToParts(date || new Date()).forEach(function (p) {
+    if (p.type !== "literal") parts[p.type] = p.value;
+  });
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+    second: Number(parts.second),
+  };
+}
+
+function getSeasonInfo(now) {
+  const p = shanghaiParts(now || new Date());
+  // Treat Shanghai calendar date as UTC date for ISO week math
+  const tmp = new Date(Date.UTC(p.year, p.month - 1, p.day));
+  const dayNum = tmp.getUTCDay() || 7; // Mon=1..Sun=7
+  tmp.setUTCDate(tmp.getUTCDate() + 4 - dayNum);
+  const isoYear = tmp.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+  const week = Math.ceil((((tmp - yearStart) / 86400000) + 1) / 7);
+  const id = isoYear + "-W" + String(week).padStart(2, "0");
+
+  // Next Monday 00:00 Asia/Shanghai
+  const shanghaiOffsetMs = 8 * 3600 * 1000;
+  // current Shanghai instant as UTC+8 wall
+  const wallUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+  // day of week for Shanghai date
+  const dow = new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay(); // 0 Sun
+  const daysUntilMon = dow === 0 ? 1 : dow === 1 ? 7 : 8 - dow;
+  const nextMon = new Date(Date.UTC(p.year, p.month - 1, p.day + daysUntilMon, 0, 0, 0));
+  // nextMon is wall clock in Shanghai expressed as UTC components; convert to real instant:
+  const endsAt = nextMon.getTime() - shanghaiOffsetMs;
+  return { id: id, label: id, endsAt: endsAt };
+}
+
+function formatSeasonCountdown(endsAt) {
+  const ms = Math.max(0, endsAt - Date.now());
+  const sec = Math.floor(ms / 1000);
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (d > 0) return "本赛季剩余 " + d + " 天 " + h + " 小时";
+  return "本赛季剩余 " + h + " 小时 " + m + " 分";
+}
+
+function syncSeasonBoardTitle(difficulty) {
+  const info = getSeasonInfo();
+  const label = DIFF_LABELS[difficulty] || "普通";
+  const title = $("seasonBoardTitle");
+  const sub = $("seasonBoardSub");
+  const cd = $("seasonCountdown");
+  if (title) title.textContent = "赛季 · " + label;
+  if (sub) sub.textContent = info.id + " · TOP 10 · 周一 00:00（上海）重置";
+  if (cd) cd.textContent = formatSeasonCountdown(info.endsAt);
+}
+
+async function saveSeasonScore(pts, difficultyId) {
+  const user = auth.currentUser;
+  if (!user || typeof pts !== "number" || pts < 0 || !Number.isFinite(pts)) {
+    return { saved: false, reason: "skip" };
+  }
+  const difficulty = resolveDifficulty(difficultyId);
+  const score = Math.floor(pts);
+  const season = getSeasonInfo();
+  const name = displayNameFor(user);
+  const ref = doc(db, "seasons", season.id, "boards", difficulty, "entries", user.uid);
+  try {
+    await user.getIdToken(true);
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      const previous = snap.data().score;
+      if (typeof previous === "number" && score < previous) {
+        return { saved: false, reason: "lower", previous: previous, seasonId: season.id };
+      }
+    }
+    await setDoc(
+      ref,
+      {
+        score: score,
+        displayName: name,
+        updatedAt: Date.now(),
+        uid: user.uid,
+        difficulty: difficulty,
+        seasonId: season.id,
+      },
+      { merge: true }
+    );
+    await loadSeasonLeaderboard(difficulty);
+    return { saved: true, score: score, seasonId: season.id, difficulty: difficulty };
+  } catch (err) {
+    console.warn("[pixel-snake] season score save failed", err && err.code, err);
+    return { saved: false, reason: "error", message: errorReason(err), code: err && err.code };
+  }
+}
+
+async function loadSeasonLeaderboard(difficultyId) {
+  const el = $("seasonLeaderboard");
+  if (!el) return;
+  const difficulty = resolveDifficulty(difficultyId);
+  const season = getSeasonInfo();
+  syncSeasonBoardTitle(difficulty);
+  // If local scope selected, let game.js render
+  const scopeBtn = document.querySelector("#seasonScopeTabs [data-season-scope].active");
+  const scope = scopeBtn ? scopeBtn.getAttribute("data-season-scope") : "cloud";
+  if (scope === "local") {
+    if (window.PixelSnakeGame && typeof window.PixelSnakeGame.renderLocalSeason === "function") {
+      window.PixelSnakeGame.renderLocalSeason(difficulty);
+    }
+    return;
+  }
+  el.innerHTML = '<li class="empty">加载中…</li>';
+  const label = DIFF_LABELS[difficulty] || "普通";
+  try {
+    const q = query(
+      collection(db, "seasons", season.id, "boards", difficulty, "entries"),
+      orderBy("score", "desc"),
+      limit(10)
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) {
+      el.innerHTML =
+        '<li class="empty">本周「' +
+        label +
+        "」暂无云端赛季成绩<br/>登录对局后自动上传最高分</li>";
+      return;
+    }
+    const rows = [];
+    let i = 0;
+    snap.forEach(function (docSnap) {
+      const data = docSnap.data();
+      i += 1;
+      rows.push(
+        "<li>" +
+          '<span class="rank">#' +
+          i +
+          "</span>" +
+          '<span class="name">' +
+          escapeHtml(data.displayName || "玩家") +
+          "</span>" +
+          '<span class="pts">' +
+          (data.score ?? 0) +
+          "</span>" +
+          '<span class="date">' +
+          formatUpdatedAt(data.updatedAt) +
+          "</span>" +
+          "</li>"
+      );
+    });
+    el.innerHTML = rows.join("");
+  } catch (err) {
+    console.warn("[pixel-snake] season board load failed", err && err.code, err);
+    let msg = "赛季榜加载失败<br/>请检查网络或稍后重试";
+    if (err && err.code === "permission-denied") msg = "赛季榜无权限<br/>请稍后再试";
+    el.innerHTML = '<li class="empty">' + msg + "</li>";
+  }
+}
+
 async function saveBestScore(pts, difficultyId) {
   const user = auth.currentUser;
   if (!user || typeof pts !== "number" || pts < 0 || !Number.isFinite(pts)) {
@@ -299,6 +472,9 @@ async function saveBestScore(pts, difficultyId) {
       );
     } catch (_) {}
     await loadCloudLeaderboard(difficulty);
+    try {
+      await saveSeasonScore(score, difficulty);
+    } catch (_) {}
     return { saved: true, score: score, difficulty: difficulty };
   } catch (err) {
     const code = err && err.code;
@@ -465,6 +641,7 @@ function wireBoardTabs() {
   const tabs = document.querySelectorAll(".board-tab");
   const cloud = $("boardCloud");
   const local = $("boardLocal");
+  const season = $("boardSeason");
   if (!tabs.length || !cloud || !local) return;
 
   function activate(which) {
@@ -475,6 +652,15 @@ function wireBoardTabs() {
     });
     setHidden(cloud, which !== "cloud");
     setHidden(local, which !== "local");
+    if (season) setHidden(season, which !== "season");
+    if (which === "season") {
+      const diff =
+        (window.PixelSnakeGame &&
+          window.PixelSnakeGame.getBoardDifficulty &&
+          window.PixelSnakeGame.getBoardDifficulty()) ||
+        "normal";
+      loadSeasonLeaderboard(diff);
+    }
   }
 
   tabs.forEach(function (t) {
@@ -482,7 +668,52 @@ function wireBoardTabs() {
       activate(t.getAttribute("data-tab") || "cloud");
     });
   });
+
+  const scopeTabs = $("seasonScopeTabs");
+  if (scopeTabs) {
+    scopeTabs.addEventListener("click", function (e) {
+      const btn = e.target.closest("[data-season-scope]");
+      if (!btn || !scopeTabs.contains(btn)) return;
+      scopeTabs.querySelectorAll("[data-season-scope]").forEach(function (b) {
+        const on = b === btn;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      const diff =
+        (window.PixelSnakeGame &&
+          window.PixelSnakeGame.getBoardDifficulty &&
+          window.PixelSnakeGame.getBoardDifficulty()) ||
+        "normal";
+      loadSeasonLeaderboard(diff);
+    });
+  }
+
+  const btnRefreshSeason = $("btnRefreshSeason");
+  if (btnRefreshSeason) {
+    btnRefreshSeason.addEventListener("click", function () {
+      const diff =
+        (window.PixelSnakeGame &&
+          window.PixelSnakeGame.getBoardDifficulty &&
+          window.PixelSnakeGame.getBoardDifficulty()) ||
+        "normal";
+      loadSeasonLeaderboard(diff);
+    });
+  }
+
+  // lightweight countdown ticker
+  setInterval(function () {
+    const cd = $("seasonCountdown");
+    if (!cd || !season || season.classList.contains("hidden")) return;
+    const info = getSeasonInfo();
+    cd.textContent = formatSeasonCountdown(info.endsAt);
+  }, 30000);
+
   activate("cloud");
+}
+
+function showSeasonBoard() {
+  const tab = $("tabSeason");
+  if (tab) tab.click();
 }
 
 function wireUI() {
@@ -548,11 +779,16 @@ window.PixelSnakeFirebase = {
     return !!(auth.currentUser || currentUser);
   },
   saveBestScore: saveBestScore,
+  saveSeasonScore: saveSeasonScore,
   refreshCloudLeaderboard: loadCloudLeaderboard,
+  refreshSeasonLeaderboard: loadSeasonLeaderboard,
+  getSeasonInfo: getSeasonInfo,
+  showSeasonBoard: showSeasonBoard,
 };
 
 wireUI();
 onAuthStateChanged(auth, function (user) {
   updateAccountUI(user);
   loadCloudLeaderboard(resolveDifficulty());
+  loadSeasonLeaderboard(resolveDifficulty());
 });

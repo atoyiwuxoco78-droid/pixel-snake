@@ -1699,3 +1699,15 @@ body.hub-open .app {
   line-height: 1.55;
   color: rgba(230, 240, 255, 0.88);
 }
+
+.season-countdown {
+  margin: 0 0 0.5rem;
+  font-size: 11px;
+  color: rgba(255, 229, 102, 0.85);
+  text-shadow: 0 0 8px rgba(255, 229, 102, 0.25);
+}
+.season-scope-tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.55rem;
+}

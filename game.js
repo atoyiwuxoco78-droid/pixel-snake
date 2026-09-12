@@ -14,6 +14,7 @@
   const POWERUP_DURATION_MS = 5500;
   const STORAGE_KEY_V1 = "pixel-snake-leaderboard-v1";
   const STORAGE_KEY = "pixel-snake-scores-v2";
+  const SEASON_STORAGE_KEY = "pixel-snake-season-v1";
   const DIFFICULTY_KEY = "pixel-snake-difficulty-v1";
   const MAX_SCORES = 10;
   const DIFF_ORDER = ["easy", "normal", "hell"];
@@ -345,6 +346,115 @@
     saveAllScores(boards);
   }
 
+
+  function seasonIdLocal() {
+    var api = fb();
+    if (api && api.getSeasonInfo) {
+      try {
+        return api.getSeasonInfo().id;
+      } catch (_) {}
+    }
+    // fallback: rough UTC week
+    var now = new Date();
+    var tmp = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    var dayNum = tmp.getUTCDay() || 7;
+    tmp.setUTCDate(tmp.getUTCDate() + 4 - dayNum);
+    var yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+    var week = Math.ceil((((tmp - yearStart) / 86400000) + 1) / 7);
+    return tmp.getUTCFullYear() + "-W" + String(week).padStart(2, "0");
+  }
+
+  function loadSeasonAll() {
+    try {
+      var raw = localStorage.getItem(SEASON_STORAGE_KEY);
+      if (!raw) return {};
+      var data = JSON.parse(raw);
+      return data && typeof data === "object" ? data : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function saveSeasonAll(data) {
+    try {
+      localStorage.setItem(SEASON_STORAGE_KEY, JSON.stringify(data || {}));
+    } catch (e) {}
+  }
+
+  function loadSeasonScores(diffId) {
+    var sid = seasonIdLocal();
+    var all = loadSeasonAll();
+    var season = all[sid] || { easy: [], normal: [], hell: [] };
+    var id = DIFFICULTY[diffId] ? diffId : "normal";
+    return Array.isArray(season[id]) ? season[id] : [];
+  }
+
+  function addSeasonScore(nickname, pts, forDiff) {
+    if (typeof pts !== "number" || !Number.isFinite(pts)) return;
+    var name = (nickname || "游客").trim().slice(0, 12) || "游客";
+    var id = DIFFICULTY[forDiff] ? forDiff : difficultyId;
+    var sid = seasonIdLocal();
+    var all = loadSeasonAll();
+    if (!all[sid]) all[sid] = { easy: [], normal: [], hell: [] };
+    var list = (all[sid][id] || []).slice();
+    list.push({
+      nickname: name,
+      score: pts,
+      date: new Date().toISOString(),
+      difficulty: id,
+      seasonId: sid,
+    });
+    list.sort(function (a, b) {
+      return b.score - a.score || a.date.localeCompare(b.date);
+    });
+    all[sid][id] = list.slice(0, MAX_SCORES);
+    // prune old seasons (keep last 8)
+    var keys = Object.keys(all).sort();
+    while (keys.length > 8) {
+      delete all[keys.shift()];
+      keys = Object.keys(all).sort();
+    }
+    saveSeasonAll(all);
+  }
+
+  function renderLocalSeason(diffId) {
+    var id = DIFFICULTY[diffId] ? diffId : boardDiffId;
+    var list = loadSeasonScores(id);
+    var el = document.getElementById("seasonLeaderboard");
+    var label = DIFF_LABELS[id] || "普通";
+    var sid = seasonIdLocal();
+    var title = document.getElementById("seasonBoardTitle");
+    var sub = document.getElementById("seasonBoardSub");
+    if (title) title.textContent = "赛季 · " + label;
+    if (sub) sub.textContent = sid + " · 本机 TOP 10";
+    if (!el) return;
+    if (!list.length) {
+      el.innerHTML =
+        '<li class="empty">本周本机暂无「' + label + "」成绩</li>";
+      return;
+    }
+    el.innerHTML = list
+      .map(function (entry, i) {
+        return (
+          "<li>" +
+          '<span class="rank">#' +
+          (i + 1) +
+          "</span>" +
+          '<span class="name">' +
+          escapeHtml(entry.nickname) +
+          "</span>" +
+          '<span class="pts">' +
+          entry.score +
+          "</span>" +
+          '<span class="date">' +
+          formatDate(entry.date) +
+          "</span>" +
+          "</li>"
+        );
+      })
+      .join("");
+  }
+
   function addScore(nickname, pts, forDiff) {
     const name = (nickname || "游客").trim().slice(0, 12) || "游客";
     const id = DIFFICULTY[forDiff] ? forDiff : difficultyId;
@@ -357,6 +467,7 @@
     });
     list.sort((a, b) => b.score - a.score || a.date.localeCompare(b.date));
     saveScoresFor(id, list);
+    addSeasonScore(name, pts, id);
     if (id === boardDiffId) renderLeaderboard();
     updateHighScoreDisplay();
   }
@@ -418,6 +529,11 @@
     if (api && typeof api.refreshCloudLeaderboard === "function") {
       try {
         api.refreshCloudLeaderboard(next);
+      } catch (_) {}
+    }
+    if (api && typeof api.refreshSeasonLeaderboard === "function") {
+      try {
+        api.refreshSeasonLeaderboard(next);
       } catch (_) {}
     }
   }
@@ -2054,6 +2170,8 @@
     redraw: function () {
       draw();
     },
+    renderLocalSeason: renderLocalSeason,
+    getSeasonId: seasonIdLocal,
   };
 
 })();
