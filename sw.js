@@ -1,10 +1,11 @@
 /* Pixel Snake — network-first shell so updates show up */
-const CACHE_NAME = 'pixel-snake-v20';
+const CACHE_NAME = 'pixel-snake-v21';
 const SHELL = [
   './',
   './index.html',
   './style.css',
   './game.js',
+  './product.js',
   './auth.js',
   './multiplayer.js',
   './manifest.webmanifest',

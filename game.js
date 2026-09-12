@@ -636,6 +636,8 @@
   function activatePower(type) {
     const meta = POWER_TYPES[type];
     if (!meta) return;
+    var mm = metaApi();
+    if (mm && mm.onPower) mm.onPower(type);
 
     if (type === "shrink") {
       const n = 2 + Math.floor(Math.random() * 2); // 2 or 3
@@ -1124,6 +1126,7 @@
   }
 
   function startGame() {
+    if (metaApi() && metaApi().isHubOpen && metaApi().isHubOpen()) return;
     if (mpMode) return;
     if (running && !paused && !dead) return;
     if (dead || !snake.length) resetGame();
@@ -1138,6 +1141,7 @@
   }
 
   function pauseGame() {
+    if (metaApi() && metaApi().isHubOpen && metaApi().isHubOpen()) return;
     if (mpMode) return;
     if (isDevilFruitOpen()) return;
     if (!running || dead) return;
@@ -1170,6 +1174,10 @@
 
   function fb() {
     return window.PixelSnakeFirebase || null;
+  }
+
+  function metaApi() {
+    return window.PixelSnakeMeta || null;
   }
 
   function preferNickname() {
@@ -1248,6 +1256,10 @@
         "−" + opt.cost + " 分 · +" + opt.gain + " 命",
         "toast-devil"
       );
+      var md = metaApi();
+      if (md && md.onLives) md.onLives(lives);
+      if (md && md.onScore) md.onScore(score);
+      if (md && md.unlock && opt.gain > 0) md.unlock("devil_deal");
     } else {
       showToast("未换命", "toast-devil");
     }
@@ -1284,6 +1296,8 @@
     dead = true;
     running = false;
     paused = false;
+    var mg = metaApi();
+    if (mg && mg.onGameOver) mg.onGameOver(score, level);
     clearInterval(timer);
     timer = null;
     if (powerHudTimer) {
@@ -1373,6 +1387,9 @@
 
     updateHUD();
     if (currentTickMs() !== prevTick) restartTimer();
+    var m = metaApi();
+    if (m && m.onFoodEaten) m.onFoodEaten(score, foodsEaten, level);
+    if (m && m.onScore) m.onScore(score);
   }
 
   function tick() {
@@ -1680,8 +1697,10 @@
           ctx.fillStyle = invulnFlash ? "#ffe566" : "#ffd700";
           ctx.shadowColor = "#ffd700";
         } else {
-          ctx.fillStyle = phasing ? "#b388ff" : shielded ? "#ff9f43" : "#00f0ff";
-          ctx.shadowColor = phasing ? "#b388ff" : shielded ? "#ff9f43" : "#00f0ff";
+          var skinH = (metaApi() && metaApi().getSkin && metaApi().getSkin()) || null;
+          var headCol = skinH && skinH.head ? skinH.head : "#00f0ff";
+          ctx.fillStyle = phasing ? "#b388ff" : shielded ? "#ff9f43" : headCol;
+          ctx.shadowColor = phasing ? "#b388ff" : shielded ? "#ff9f43" : headCol;
         }
         ctx.shadowBlur = 10;
       } else {
@@ -1703,8 +1722,13 @@
           const g = Math.floor(80 + (1 - t) * 140);
           ctx.fillStyle = "rgb(" + Math.min(255, g + 40) + "," + g + ",40)";
         } else {
-          const g = Math.floor(40 + (1 - t) * 180);
-          ctx.fillStyle = "rgb(0," + g + "," + Math.min(255, g + 40) + ")";
+          var skinB = (metaApi() && metaApi().getSkin && metaApi().getSkin()) || null;
+          if (skinB && typeof skinB.body === "function") {
+            ctx.fillStyle = skinB.body(t);
+          } else {
+            const g = Math.floor(40 + (1 - t) * 180);
+            ctx.fillStyle = "rgb(0," + g + "," + Math.min(255, g + 40) + ")";
+          }
         }
         ctx.shadowBlur = 0;
       }
@@ -1718,7 +1742,12 @@
       }
 
       if (isHead) {
-        ctx.fillStyle = phasing ? "#efe6ff" : "#a8ffff";
+        var skinHi = (metaApi() && metaApi().getSkin && metaApi().getSkin()) || null;
+        ctx.fillStyle = phasing
+          ? "#efe6ff"
+          : skinHi && skinHi.headHi
+            ? skinHi.headHi
+            : "#a8ffff";
         ctx.fillRect(sx + pad + 3, sy + pad + 3, 6, 6);
         ctx.fillStyle = "#0a0e17";
         const eyeOff = {
@@ -1972,6 +2001,41 @@
     });
   }
 
+  function returnToHub() {
+    clearInterval(timer);
+    timer = null;
+    running = false;
+    paused = false;
+    dead = false;
+    if (powerHudTimer) {
+      clearInterval(powerHudTimer);
+      powerHudTimer = null;
+    }
+    if (devilFruitOpen && devilFruitModal) {
+      devilFruitOpen = false;
+      setModalHidden(devilFruitModal, true);
+    }
+    setModalHidden(scoreModal, true);
+    btnStart.disabled = false;
+    btnPause.disabled = true;
+    btnPause.textContent = "暂停";
+    resetGame();
+    showOverlay("主菜单", "从大厅继续冒险");
+  }
+
+  function prepareFromHub() {
+    mpMode = false;
+    dead = false;
+    paused = false;
+    running = false;
+    resetGame();
+    btnStart.disabled = false;
+    btnPause.disabled = true;
+    btnPause.textContent = "暂停";
+    showOverlay("准备好了吗？", "按「开始游戏」或空格键");
+    draw();
+  }
+
   window.PixelSnakeGame = {
     enterMultiplayer: enterMultiplayer,
     exitMultiplayer: exitMultiplayer,
@@ -1985,6 +2049,11 @@
       return boardDiffId;
     },
     setBoardDifficulty: setBoardDifficulty,
+    returnToHub: returnToHub,
+    prepareFromHub: prepareFromHub,
+    redraw: function () {
+      draw();
+    },
   };
 
 })();

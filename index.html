@@ -15,10 +15,61 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./style.css?v=20" />
+  <link rel="stylesheet" href="./style.css?v=21" />
 </head>
 <body>
   <div class="scanlines" aria-hidden="true"></div>
+
+  <!-- Product hub (route 1 shell) -->
+  <div class="hub" id="hub" role="dialog" aria-label="主菜单">
+    <div class="hub-card">
+      <div class="hub-brand">
+        <h1 class="hub-title"><span class="neon-cyan">像素</span><span class="neon-magenta">贪吃蛇</span></h1>
+        <p class="hub-sub">Arcade Edition · 产品版</p>
+      </div>
+
+      <div id="hubHome">
+        <div class="hub-actions">
+          <button type="button" class="btn btn-primary btn-cta" id="hubPlay">开始冒险</button>
+          <button type="button" class="btn btn-secondary" id="hubMp">双人对战</button>
+          <button type="button" class="btn btn-secondary" id="hubOpenStory">短篇剧情</button>
+          <button type="button" class="btn btn-secondary" id="hubOpenAchievements">成就</button>
+          <button type="button" class="btn btn-secondary" id="hubOpenSkins">皮肤</button>
+        </div>
+        <p class="hub-footnote">登录可同步云端成绩 · 可安装到桌面</p>
+      </div>
+
+      <div id="hubAchievements" class="hub-panel hidden" hidden>
+        <div class="hub-panel-head">
+          <h2 class="hub-panel-title neon-cyan">成就</h2>
+          <button type="button" class="btn btn-secondary btn-xs" data-hub-back>返回</button>
+        </div>
+        <ul class="hub-list" id="hubAchievementsList"></ul>
+      </div>
+
+      <div id="hubSkins" class="hub-panel hidden" hidden>
+        <div class="hub-panel-head">
+          <h2 class="hub-panel-title neon-magenta">皮肤</h2>
+          <button type="button" class="btn btn-secondary btn-xs" data-hub-back>返回</button>
+        </div>
+        <ul class="hub-list" id="hubSkinsList"></ul>
+      </div>
+
+      <div id="hubStory" class="hub-panel hidden" hidden>
+        <div class="hub-panel-head">
+          <h2 class="hub-panel-title neon-yellow">短篇剧情</h2>
+          <button type="button" class="btn btn-secondary btn-xs" data-hub-back>返回</button>
+        </div>
+        <ul class="hub-list" id="hubStoryList"></ul>
+        <div id="hubStoryReader" class="hub-story-reader hidden" hidden>
+          <h3 class="hub-story-reader-title" id="hubStoryReaderTitle"></h3>
+          <p class="hub-story-reader-body" id="hubStoryReaderBody"></p>
+          <button type="button" class="btn btn-secondary btn-sm" id="hubStoryReaderClose">收起</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="app">
     <header class="header">
       <h1 class="title">
@@ -120,6 +171,7 @@
             <button type="button" class="btn btn-primary btn-cta" id="btnStart">开始游戏</button>
             <button type="button" class="btn btn-secondary" id="btnPause" disabled>暂停</button>
             <button type="button" class="btn btn-secondary" id="btnRestart">重新开始</button>
+            <button type="button" class="btn btn-secondary" id="btnHubMenu">主菜单</button>
           </div>
         </div>
 
@@ -221,7 +273,7 @@
     </main>
 
     <footer class="footer">
-      <span class="build-version" id="buildVersion">版本 v20 · 五技能</span><span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
+      <span class="build-version" id="buildVersion">版本 v21 · 产品壳</span><span id="footerNote">本地存储 · 登录后同步云端 / 双人对战</span>
     </footer>
   </div>
 
@@ -271,19 +323,20 @@
     </div>
   </div>
 
-  <script src="./game.js?v=20"></script>
-  <script type="module" src="./auth.js?v=20"></script>
-  <script type="module" src="./multiplayer.js?v=20"></script>
+  <script src="./product.js?v=21"></script>
+  <script src="./game.js?v=21"></script>
+  <script type="module" src="./auth.js?v=21"></script>
+  <script type="module" src="./multiplayer.js?v=21"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=20").then((reg) => {
+        navigator.serviceWorker.register("./sw.js?v=21").then((reg) => {
           reg.update();
         }).catch(() => {});
         // One-time: drop ancient caches if a controller is stuck
         caches.keys().then((keys) => {
           keys.forEach((k) => {
-            if (k !== "pixel-snake-v20") caches.delete(k);
+            if (k !== "pixel-snake-v21") caches.delete(k);
           });
         }).catch(() => {});
       });
