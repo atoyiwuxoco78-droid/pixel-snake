@@ -353,7 +353,7 @@
 
   function onPower(type) {
     unlock("power_collector");
-    if (type === "devil") unlock("devil_deal");
+    // devil_deal unlocks only after a successful score→lives trade (game.js)
     if (type === "ghost") unlock("ghost_walk");
     if (type === "bomb") unlock("bomber");
   }
